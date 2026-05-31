@@ -1,0 +1,4 @@
+https://cbr.ru/hd_base/ruonia/dynamics/ - Динамика ставки RUONIA и параметров расчета
+https://cbr.ru/hd_base/KeyRate/ - Ключевая ставка Банка России
+https://cbr.ru/hd_base/RReserves/ - Обязательные резервы кредитных организаций
+https://cbr.ru/hd_base/repo/ - Итоги аукционов репо
