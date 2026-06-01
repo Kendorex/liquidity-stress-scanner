@@ -1,0 +1,2 @@
+﻿date_downloaded,file_name,url,title,source_page_url,source_section,metric,metric_ru,module,is_target_file,local_file_path
+2026-06-01,02_29_Budget_all.xlsx,https://www.cbr.ru/vfs/statistics/banksector/borrowings/02_29_Budget_all.xlsx,Бюджетные средства на счетах кредитных организаций,https://www.cbr.ru/statistics/bank_sector/sors/,Привлечённые средства / Borrowings,budget_funds_on_credit_institutions_accounts,Бюджетные средства на счетах кредитных организаций,M5,1,data/m5/cbr_sors/02_29_Budget_all.xlsx
