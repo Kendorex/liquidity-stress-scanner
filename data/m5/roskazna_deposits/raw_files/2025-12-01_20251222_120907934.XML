@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Depo>
+  <Depoauc1>
+    <aucdate>01.12.2025</aucdate>
+    <id>22025399</id>
+    <cur>рубли</cur>
+    <FundsPlaced>средства единого казначейского счёта</FundsPlaced>
+    <maxvol>100000</maxvol>
+    <term>182</term>
+    <firstdate>01.12.2025</firstdate>
+    <seconddate>01.06.2026</seconddate>
+    <ratetype>FLOATING</ratetype>
+    <minrate>-</minrate>
+    <baseflrate>RUONmDS</baseflrate>
+    <minspread>0.00</minspread>
+    <depotype>Срочный</depotype>
+    <minorder>1000</minorder>
+    <maxcrorder>2</maxcrorder>
+    <orderform>Открытая</orderform>
+    <place>АО СПВБ</place>
+    <biddingtime>с 15:00 по 15:20</biddingtime>
+    <predtime>с 15:00 по 15:05</predtime>
+    <conctime>с 15:15 по 15:20</conctime>
+    <registrytime>с 15:40 по 16:10</registrytime>
+    <cutofftime>с 15:40 по 16:20</cutofftime>
+    <oferttime></oferttime>
+    <akcepttime></akcepttime>
+    <paytime>В соответствии с требованиями п. 64 и п. 65 Приказа Федерального казначейства от 18.09.2025 г. № 8н</paytime>
+    <cutoffrate>0.03</cutoffrate>
+    <totalbid>208707</totalbid>
+    <totalaccept>100000</totalaccept>
+    <totalsettle>100000</totalsettle>
+    <waacceptrate>0.04</waacceptrate>
+    <minbidrate>0.00</minbidrate>
+    <maxbidrate>0.04</maxbidrate>
+    <crbidders>4</crbidders>
+    <acceptcrbidders>3</acceptcrbidders>
+    <randtime>-</randtime>
+    <extensionperiod></extensionperiod>
+    <endofextensionperiod>15:40</endofextensionperiod>
+    <extrarate></extrarate>
+    <netting>без зачета взаимных обязательств</netting>
+    <depositcontractstime>с 16:20 по 16:40</depositcontractstime>
+    <Comment></Comment>
+  </Depoauc1>
+</Depo>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Depo>
+  <Depoauc1>
+    <aucdate>24.02.2021</aucdate>
+    <id>22021007</id>
+    <cur>рубли</cur>
+    <FundsPlaced>средства единого казначейского счёта</FundsPlaced>
+    <maxvol>100000</maxvol>
+    <term>21</term>
+    <firstdate>25.02.2021</firstdate>
+    <seconddate>18.03.2021</seconddate>
+    <ratetype>FIXED</ratetype>
+    <minrate>4.05</minrate>
+    <baseflrate>-</baseflrate>
+    <minspread>-</minspread>
+    <depotype>Срочный</depotype>
+    <minorder>1000</minorder>
+    <maxcrorder>5</maxcrorder>
+    <orderform>Открытая</orderform>
+    <place>ПАО Московская Биржа</place>
+    <biddingtime>с 14:00 по 14:20</biddingtime>
+    <predtime>с 14:00 по 14:10</predtime>
+    <conctime>с 14:10 по 14:20</conctime>
+    <registrytime>с 14:20 по 14:30</registrytime>
+    <cutofftime>с 14:20 по 14:45</cutofftime>
+    <oferttime>с 14:45 по 16:00</oferttime>
+    <akcepttime>с 14:45 по 16:00</akcepttime>
+    <paytime>В соответствии с требованиями п. 63 и п. 64 Приказа Федерального казначейства от 23.11.2020 № 35н</paytime>
+    <cutoffrate>-</cutoffrate>
+    <totalbid>-</totalbid>
+    <totalaccept>-</totalaccept>
+    <totalsettle>-</totalsettle>
+    <waacceptrate>-</waacceptrate>
+    <minbidrate>-</minbidrate>
+    <maxbidrate>-</maxbidrate>
+    <crbidders>-</crbidders>
+    <acceptcrbidders>-</acceptcrbidders>
+    <randtime></randtime>
+    <extensionperiod></extensionperiod>
+    <endofextensionperiod></endofextensionperiod>
+    <extrarate></extrarate>
+    <netting></netting>
+    <depositcontractstime></depositcontractstime>
+    <Comment>Отбор заявок кредитных организаций на заключение договоров банковского депозита признан несостоявшимся</Comment>
+  </Depoauc1>
+</Depo>
