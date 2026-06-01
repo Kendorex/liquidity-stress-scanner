@@ -506,6 +506,11 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         df.loc[stress_pattern, "m2_signal"] + 5
     ).clip(upper=100)
 
+    # Единый стандарт выхода для LSI.
+    df["date"] = df["auction_date"]
+    df["m2_score"] = df["m2_signal"]
+    df["m2_flag"] = ((df["flag_demand"] == 1) | (df["flag_rate_pressure"] == 1)).astype(int)
+
     df["m2_signal_zone"] = pd.cut(
         df["m2_signal"],
         bins=[-0.1, 40, 70, 100],
@@ -513,6 +518,7 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     output_columns = [
+        "date",
         "auction_date",
         "auction_datetime",
         "auction_type",
@@ -546,6 +552,8 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         "flag_rate_pressure",
         "stress_pattern_flag",
         "signal_ready",
+        "m2_score",
+        "m2_flag",
         "m2_signal",
         "m2_signal_zone",
     ]

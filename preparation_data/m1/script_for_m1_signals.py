@@ -457,6 +457,11 @@ def calculate_m1_signals(m1_df: pd.DataFrame) -> pd.DataFrame:
     # Если данных не хватает, сигнал не считаем.
     df.loc[df["signal_ready"] == 0, "m1_signal"] = 0
 
+    # Единый стандарт выхода для LSI.
+    df["date"] = df["period_end"]
+    df["m1_score"] = df["m1_signal"]
+    df["m1_flag"] = df["stress_pattern_flag"].astype(int)
+
     # Уровень интерпретации сигнала
     df["m1_signal_zone"] = pd.cut(
         df["m1_signal"],
@@ -465,6 +470,7 @@ def calculate_m1_signals(m1_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     output_columns = [
+        "date",
         "period_start",
         "period_end",
         "actual_corr_accounts",
@@ -492,6 +498,8 @@ def calculate_m1_signals(m1_df: pd.DataFrame) -> pd.DataFrame:
         "positive_mad_score_ruonia",
         "stress_pattern_flag",
         "signal_ready",
+        "m1_score",
+        "m1_flag",
         "m1_signal",
         "m1_signal_zone",
     ]

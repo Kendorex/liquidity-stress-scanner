@@ -1319,6 +1319,30 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
         | (result["mad_score_roskazna"] >= 2.5)
     ).astype(int)
 
+    # Итоговый стандартизированный выход M5 для LSI.
+    # ЦБ — главный источник. Росказна используется только как дополнительный индикатор,
+    # потому что её история в текущем наборе данных заполнена неравномерно.
+    cbr_score = pd.to_numeric(result["mad_score_cbr"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
+    roskazna_score = pd.to_numeric(result["mad_score_roskazna"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
+    flag_score = result["flag_budget_drain"].astype(float) * 100.0
+
+    result["m5_score"] = (0.70 * cbr_score + 0.15 * roskazna_score + 0.15 * flag_score).clip(lower=0.0, upper=100.0)
+    result["m5_flag"] = result["flag_budget_drain"].astype(int)
+    result["m5_signal"] = result["m5_score"]
+
+    has_cbr = result["cbr_budget_funds_total"].notna()
+    has_roskazna = result["roskazna_deposit_volume"].notna() | result["mad_score_roskazna"].notna()
+    result["source_quality"] = "low"
+    result.loc[has_cbr & ~has_roskazna, "source_quality"] = "medium"
+    result.loc[has_cbr & has_roskazna, "source_quality"] = "high"
+    result["m5_comment"] = "ЦБ SORS — основной источник; Росказна — дополнительный индикатор при наличии данных"
+
+    low_quality_mask = result["source_quality"].eq("low")
+
+    result.loc[low_quality_mask, "m5_score"] = 0.0
+    result.loc[low_quality_mask, "m5_signal"] = 0.0
+    result.loc[low_quality_mask, "m5_flag"] = 0
+
     final_columns = [
         "date",
         "cbr_federal_budget_funds",
@@ -1340,6 +1364,11 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
         "mad_score_roskazna_weekly_max",
         "mad_score_roskazna",
         "flag_budget_drain",
+        "m5_score",
+        "m5_flag",
+        "m5_signal",
+        "source_quality",
+        "m5_comment",
     ]
 
     result = ensure_columns(result, final_columns)
@@ -1463,6 +1492,11 @@ def save_outputs(
             ["mad_score_roskazna_weekly_max", "Максимальный недельный MAD-score Росказны внутри месяца. Положительное значение = стресс."],
             ["mad_score_roskazna", "Финальный MAD-score Росказны для LSI: максимум между месячным и недельным стрессом."],
             ["flag_budget_drain", "Флаг резкого бюджетного оттока / провала размещений Росказны"],
+            ["m5_score", "Итоговый стандартизированный score M5 для LSI, 0–100. Основной вес у данных ЦБ."],
+            ["m5_flag", "Итоговый флаг M5 для LSI"],
+            ["m5_signal", "Итоговый сигнал M5, равен m5_score"],
+            ["source_quality", "Качество источников: high = ЦБ + Росказна, medium = только ЦБ, low = мало данных"],
+            ["m5_comment", "Краткий комментарий по методологии M5"],
         ],
         columns=["column_name", "description"],
     )

@@ -291,10 +291,34 @@ def build_m3_signals() -> pd.DataFrame:
         .median()
     )
 
-    df["yield_spread"] = df["weighted_avg_yield"] - df["rolling_median_yield"]
-    df["yield_spread"] = pd.to_numeric(df["yield_spread"], errors="coerce")
+    # Важно: это proxy, а не полноценный спред к рыночной кривой ОФЗ.
+    df["proxy_yield_spread"] = df["weighted_avg_yield"] - df["rolling_median_yield"]
+    df["proxy_yield_spread"] = pd.to_numeric(df["proxy_yield_spread"], errors="coerce")
 
-    df["mad_score_yield_spread"] = calculate_mad_score(df["yield_spread"])
+    # Оставляем старое имя для обратной совместимости с уже написанным LSI/графиками.
+    df["yield_spread"] = df["proxy_yield_spread"]
+
+    df["mad_score_yield_spread"] = calculate_mad_score(df["proxy_yield_spread"])
+
+    # Итоговый стандартизированный выход M3 для LSI.
+    # mad_score_cover уже развернут: положительное значение = стресс из-за низкого спроса.
+    cover_stress_score = pd.to_numeric(df["mad_score_cover"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
+    yield_stress_score = pd.to_numeric(df["mad_score_yield_spread"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
+
+    df["m3_score"] = (
+        0.65 * cover_stress_score
+        + 0.25 * yield_stress_score
+        + 0.10 * df["flag_nedospros"] * 100.0
+    ).clip(lower=0.0, upper=100.0)
+
+    df["m3_flag"] = (
+        (df["m3_score"] >= 40)
+        | ((df["cover_ratio"] < 0.8) & (yield_stress_score >= 25))
+    ).astype(int)
+
+    df["m3_signal"] = df["m3_score"]
+
+    df["m3_comment"] = "proxy_yield_spread: отклонение доходности от собственной скользящей медианы, не от кривой ОФЗ"
 
     final_columns = [
         "auction_date",
@@ -305,11 +329,16 @@ def build_m3_signals() -> pd.DataFrame:
         "cover_ratio",
         "weighted_avg_yield",
         "rolling_median_yield",
+        "proxy_yield_spread",
         "yield_spread",
         "mad_score_cover",
         "mad_score_yield_spread",
         "flag_nedospros",
         "flag_perespros",
+        "m3_score",
+        "m3_flag",
+        "m3_signal",
+        "m3_comment",
         "source_year",
         "source_file",
     ]
@@ -329,11 +358,15 @@ def build_daily_cover_ratio(df: pd.DataFrame) -> pd.DataFrame:
             offer_volume=("offer_volume", "sum"),
             placed_volume=("placed_volume", "sum"),
             weighted_avg_yield=("weighted_avg_yield", "mean"),
+            proxy_yield_spread=("proxy_yield_spread", "mean"),
             yield_spread=("yield_spread", "mean"),
             mad_score_cover=("mad_score_cover", "mean"),
             mad_score_yield_spread=("mad_score_yield_spread", "mean"),
             flag_nedospros=("flag_nedospros", "max"),
             flag_perespros=("flag_perespros", "max"),
+            m3_score=("m3_score", "max"),
+            m3_flag=("m3_flag", "max"),
+            m3_signal=("m3_signal", "max"),
         )
         .sort_values("auction_date")
         .reset_index(drop=True)

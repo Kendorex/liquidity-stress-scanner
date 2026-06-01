@@ -136,6 +136,12 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
     df["seasonal_factor"] = 1.0 + 0.4 * df["tax_pressure_score"] / 100
     df["seasonal_factor"] = df["seasonal_factor"].clip(lower=1.0, upper=1.4)
 
+    # Единый стандарт выхода для LSI: M4 — не отдельный стресс, а сезонный множитель.
+    df["m4_seasonal_factor"] = df["seasonal_factor"]
+    df["m4_score"] = df["tax_pressure_score"]
+    df["m4_flag"] = df["tax_week_flag"].astype(int)
+    df["m4_signal"] = df["m4_seasonal_factor"]
+
     df["m4_signal_zone"] = pd.cut(
         df["seasonal_factor"],
         bins=[0.99, 1.05, 1.15, 1.30, 1.40],
@@ -169,6 +175,10 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
         "days_to_nearest_tax_notification",
         "tax_pressure_score",
         "seasonal_factor",
+        "m4_seasonal_factor",
+        "m4_score",
+        "m4_flag",
+        "m4_signal",
         "m4_signal_zone",
     ]
 

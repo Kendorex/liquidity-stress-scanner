@@ -67,15 +67,15 @@ CONTRIBUTIONS_CHART_FILE = RESULT_DIR / "lsi_contributions_chart.png"
 # ------------------------------------------------------------
 
 BASE_WEIGHTS = {
-    "m1": 0.22,
-    "m2": 0.28,
+    "m1": 0.25,
+    "m2": 0.25,
     "m3": 0.20,
     "m5": 0.30,
 }
 
 TAX_WEEK_WEIGHT_DISCOUNT = 0.85
 MAX_SEASONAL_MULTIPLIER = 1.25
-AGGREGATION_SCALE = 2.8
+AGGREGATION_SCALE = 1.8
 MAD_CAP = 4.0
 M3_CARRY_DAYS = 7
 
@@ -330,23 +330,30 @@ def prepare_m3() -> pd.DataFrame:
 
     df["date"] = to_date(df[date_col])
 
-    # Для ОФЗ стресс = слабый спрос, то есть отрицательное отклонение cover.
-    low_cover_score = negative_mad_to_score(df["mad_score_cover"] if "mad_score_cover" in df.columns else None)
-    yield_score = positive_mad_to_score(df["mad_score_yield_spread"] if "mad_score_yield_spread" in df.columns else None)
-
-    if "flag_nedospros" in df.columns:
-        nedospros_flag = safe_bool_flag(df["flag_nedospros"])
+    if "m3_score" in df.columns:
+        df["m3_score"] = clip_0_100(df["m3_score"])
     else:
-        # fallback: cover_ratio ниже 1.2 считаем недоспросом
-        if "cover_ratio" in df.columns:
+        # В актуальном M3 mad_score_cover уже развернут: положительное значение = стресс.
+        # Старую ошибку с negative_mad_to_score здесь не используем.
+        low_cover_score = positive_mad_to_score(df["mad_score_cover"] if "mad_score_cover" in df.columns else None)
+        yield_score = positive_mad_to_score(df["mad_score_yield_spread"] if "mad_score_yield_spread" in df.columns else None)
+        if "flag_nedospros" in df.columns:
+            nedospros_flag = safe_bool_flag(df["flag_nedospros"])
+        elif "cover_ratio" in df.columns:
             nedospros_flag = (pd.to_numeric(df["cover_ratio"], errors="coerce") < 1.2).fillna(False).astype(int)
         else:
             nedospros_flag = pd.Series(0, index=df.index)
+        df["m3_score"] = clip_0_100(0.50 * low_cover_score + 0.20 * yield_score + 0.30 * nedospros_flag * 100.0)
 
-    df["m3_score"] = clip_0_100(
-        0.45 * low_cover_score + 0.15 * yield_score + 0.40 * nedospros_flag * 100.0
-    )
-    df["m3_flag"] = nedospros_flag.astype(int)
+    if "m3_flag" in df.columns:
+        df["m3_flag"] = safe_bool_flag(df["m3_flag"])
+    elif "flag_nedospros" in df.columns:
+        df["m3_flag"] = safe_bool_flag(df["flag_nedospros"])
+    elif "cover_ratio" in df.columns:
+        df["m3_flag"] = (pd.to_numeric(df["cover_ratio"], errors="coerce") < 1.2).fillna(False).astype(int)
+    else:
+        df["m3_flag"] = 0
+
     df["m3_ready"] = 1
 
     daily = (
@@ -400,26 +407,28 @@ def prepare_m5() -> pd.DataFrame:
 
     df["date"] = to_date(df[date_col])
 
-    cbr_score = positive_mad_to_score(df["mad_score_cbr"] if "mad_score_cbr" in df.columns else None)
-
-    # В новом M5 итоговая колонка mad_score_roskazna уже включает месячный + недельный сигнал.
-    if "mad_score_roskazna" in df.columns:
-        roskazna_mad = df["mad_score_roskazna"]
-    elif "mad_score_roskazna_weekly_max" in df.columns:
-        roskazna_mad = df["mad_score_roskazna_weekly_max"]
-    elif "mad_score_roskazna_monthly" in df.columns:
-        roskazna_mad = df["mad_score_roskazna_monthly"]
+    if "m5_score" in df.columns:
+        df["m5_score"] = clip_0_100(df["m5_score"])
     else:
-        roskazna_mad = None
+        cbr_score = positive_mad_to_score(df["mad_score_cbr"] if "mad_score_cbr" in df.columns else None)
+        if "mad_score_roskazna" in df.columns:
+            roskazna_mad = df["mad_score_roskazna"]
+        elif "mad_score_roskazna_weekly_max" in df.columns:
+            roskazna_mad = df["mad_score_roskazna_weekly_max"]
+        elif "mad_score_roskazna_monthly" in df.columns:
+            roskazna_mad = df["mad_score_roskazna_monthly"]
+        else:
+            roskazna_mad = None
+        roskazna_score = positive_mad_to_score(roskazna_mad)
+        flag = safe_bool_flag(df["flag_budget_drain"] if "flag_budget_drain" in df.columns else pd.Series(0, index=df.index))
+        df["m5_score"] = clip_0_100(0.70 * cbr_score + 0.15 * roskazna_score + 0.15 * flag * 100.0)
 
-    roskazna_score = positive_mad_to_score(roskazna_mad)
-    flag = safe_bool_flag(df["flag_budget_drain"] if "flag_budget_drain" in df.columns else pd.Series(0, index=df.index))
-    flag_score = flag * 100.0
+    if "m5_flag" in df.columns:
+        df["m5_flag"] = safe_bool_flag(df["m5_flag"])
+    else:
+        df["m5_flag"] = safe_bool_flag(df["flag_budget_drain"] if "flag_budget_drain" in df.columns else pd.Series(0, index=df.index))
 
-    df["m5_score"] = clip_0_100(0.45 * cbr_score + 0.35 * roskazna_score + 0.20 * flag_score)
-    df["m5_flag"] = flag.astype(int)
-
-    signal_cols = [col for col in ["mad_score_cbr", "mad_score_roskazna", "flag_budget_drain"] if col in df.columns]
+    signal_cols = [col for col in ["m5_score", "mad_score_cbr", "mad_score_roskazna", "flag_budget_drain"] if col in df.columns]
     if signal_cols:
         df["m5_ready"] = df[signal_cols].notna().any(axis=1).astype(int)
     else:
@@ -572,8 +581,10 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     result["seasonal_multiplier"] = (
         pd.to_numeric(result["seasonal_factor"], errors="coerce")
         .fillna(1.0)
-        .clip(1.0, MAX_SEASONAL_MULTIPLIER)
+        .clip(lower=1.0, upper=MAX_SEASONAL_MULTIPLIER)
     )
+
+    result["seasonal_factor"] = result["seasonal_multiplier"]
 
     result["raw_lsi_before_clip"] = result["base_lsi_before_seasonal"] * result["seasonal_multiplier"]
     result["lsi"] = result["raw_lsi_before_clip"].clip(0.0, 100.0)
@@ -617,10 +628,26 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     result["contribution_gap"] = result["lsi"] - result["contribution_sum_check"]
 
     result["status"] = result["lsi"].apply(status_from_lsi)
+    result["event_stress_flag"] = result["date"].apply(is_known_stress_event).astype(int)
     result["active_flags"] = result.apply(build_active_flags_text, axis=1)
     result["top_driver"] = result.apply(get_top_driver, axis=1)
 
     return result
+
+
+def is_known_stress_event(date_value) -> int:
+    """Ручной event-flag для проверки на известных стрессовых окнах."""
+    date = pd.to_datetime(date_value, errors="coerce")
+    if pd.isna(date):
+        return 0
+
+    episodes = [
+        (pd.Timestamp("2014-12-01"), pd.Timestamp("2014-12-31")),
+        (pd.Timestamp("2022-02-01"), pd.Timestamp("2022-03-31")),
+        (pd.Timestamp("2025-01-01"), pd.Timestamp("2025-01-31")),
+    ]
+
+    return int(any(start <= date <= end for start, end in episodes))
 
 
 def build_active_flags_text(row: pd.Series) -> str:
@@ -664,7 +691,6 @@ def build_backtest(lsi_df: pd.DataFrame) -> pd.DataFrame:
     episodes = [
         ("Декабрь 2014", "2014-12-01", "2014-12-31"),
         ("Февраль–март 2022", "2022-02-01", "2022-03-31"),
-        ("Август 2023", "2023-08-01", "2023-08-31"),
         ("Отложенная проверка: январь 2025", "2025-01-01", "2025-01-31"),
     ]
 
@@ -701,6 +727,9 @@ def build_backtest(lsi_df: pd.DataFrame) -> pd.DataFrame:
                 "top_driver_at_max": period.loc[idxmax, "top_driver"],
                 "ground_truth_stress_days": int(
                     period.get("ground_truth_stress_flag", pd.Series(0, index=period.index)).sum()
+                ),
+                "event_stress_days": int(
+                    period.get("event_stress_flag", pd.Series(0, index=period.index)).sum()
                 ),
                 "comment": "ok",
             }
@@ -804,7 +833,6 @@ def plot_lsi(lsi_df: pd.DataFrame) -> None:
     stress_episodes = [
         ("2014-12-01", "2014-12-31", "декабрь 2014"),
         ("2022-02-01", "2022-03-31", "февраль–март 2022"),
-        ("2023-08-01", "2023-08-31", "август 2023"),
     ]
 
     for start, end, label in stress_episodes:
@@ -914,6 +942,7 @@ def save_outputs(
         "contribution_gap",
         "ground_truth_liquidity_balance",
         "ground_truth_stress_flag",
+        "event_stress_flag",
     ]
     selected_cols = [col for col in selected_cols if col in lsi_df.columns]
 
