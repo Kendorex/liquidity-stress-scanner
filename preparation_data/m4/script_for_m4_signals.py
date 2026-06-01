@@ -131,10 +131,8 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
     # Выходные не являются рыночным днем, но календарный фактор сохраняем.
     df["tax_pressure_score"] = df["tax_pressure_score"].clip(lower=0, upper=100)
 
-    # Главный выход M4 — мультипликатор для итогового индекса ликвидности.
-    # 1.00 — обычный день, 1.40 — максимальное календарное давление.
-    df["seasonal_factor"] = 1.0 + 0.4 * df["tax_pressure_score"] / 100
-    df["seasonal_factor"] = df["seasonal_factor"].clip(lower=1.0, upper=1.4)
+    df["seasonal_factor"] = 1.0 + 0.25 * df["tax_pressure_score"] / 100
+    df["seasonal_factor"] = df["seasonal_factor"].clip(lower=1.0, upper=1.25)
 
     # Единый стандарт выхода для LSI: M4 — не отдельный стресс, а сезонный множитель.
     df["m4_seasonal_factor"] = df["seasonal_factor"]
@@ -144,7 +142,7 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
 
     df["m4_signal_zone"] = pd.cut(
         df["seasonal_factor"],
-        bins=[0.99, 1.05, 1.15, 1.30, 1.40],
+        bins=[0.99, 1.05, 1.12, 1.20, 1.25],
         labels=[
             "обычный день",
             "слабый фактор",
@@ -231,7 +229,7 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
         label="Seasonal factor M4",
     )
 
-    strong_points = chart_df[chart_df["seasonal_factor"] >= 1.30].copy()
+    strong_points = chart_df[chart_df["seasonal_factor"] >= 1.20].copy()
     if not strong_points.empty:
         ax.scatter(
             strong_points["date"],
@@ -242,8 +240,8 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
         )
 
     ax.axhline(1.00, linestyle=":", linewidth=1.2, label="Обычный день")
-    ax.axhline(1.15, linestyle="--", linewidth=1.2, label="Налоговое давление")
-    ax.axhline(1.30, linestyle="--", linewidth=1.2, label="Сильное давление")
+    ax.axhline(1.12, linestyle="--", linewidth=1.2, label="Налоговое давление")
+    ax.axhline(1.20, linestyle="--", linewidth=1.2, label="Сильное давление")
 
     ax.set_title(
         "M4: календарный сезонный фактор налоговых периодов (полный период)",
@@ -272,7 +270,7 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
         label="Seasonal factor M4",
     )
 
-    strong_points_recent = recent_df[recent_df["seasonal_factor"] >= 1.30].copy()
+    strong_points_recent = recent_df[recent_df["seasonal_factor"] >= 1.20].copy()
     if not strong_points_recent.empty:
         ax.scatter(
             strong_points_recent["date"],
@@ -283,8 +281,8 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
         )
 
     ax.axhline(1.00, linestyle=":", linewidth=1.2, label="Обычный день")
-    ax.axhline(1.15, linestyle="--", linewidth=1.2, label="Налоговое давление")
-    ax.axhline(1.30, linestyle="--", linewidth=1.2, label="Сильное давление")
+    ax.axhline(1.12, linestyle="--", linewidth=1.2, label="Налоговое давление")
+    ax.axhline(1.20, linestyle="--", linewidth=1.2, label="Сильное давление")
 
     ax.set_title(
         "M4: календарный сезонный фактор налоговых периодов (последние 4 года)",
