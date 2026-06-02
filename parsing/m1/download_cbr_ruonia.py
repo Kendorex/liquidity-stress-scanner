@@ -14,11 +14,6 @@ DEFAULT_FROM_DATE = "11.01.2010"
 
 
 def create_session() -> requests.Session:
-    """
-    Создаём сессию requests с повторными попытками.
-    Отключаем системные proxy-настройки, чтобы снизить риск ошибки WinError 10054.
-    """
-
     session = requests.Session()
     session.trust_env = False
 
@@ -40,11 +35,6 @@ def create_session() -> requests.Session:
 
 
 def convert_date_to_cbr_excel_format(date_str: str) -> str:
-    """
-    Переводит дату из формата ДД.ММ.ГГГГ в формат ММ/ДД/ГГГГ,
-    который нужен ссылке DownloadExcel на сайте ЦБ.
-    """
-
     date_obj = datetime.strptime(date_str, "%d.%m.%Y")
     return date_obj.strftime("%m/%d/%Y")
 
@@ -53,11 +43,6 @@ def download_ruonia_excel(
     from_date: str = DEFAULT_FROM_DATE,
     to_date: str | None = None,
 ) -> Path:
-    """
-    Скачивает Excel-файл с динамикой RUONIA с сайта ЦБ
-    и сохраняет его в папку data/cbr/m1/ruonia.
-    """
-
     if to_date is None:
         to_date = datetime.today().strftime("%d.%m.%Y")
 

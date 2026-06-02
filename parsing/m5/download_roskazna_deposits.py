@@ -20,8 +20,6 @@ from bs4 import BeautifulSoup
 # 2. собирает ссылки на DOCX/XML;
 # 3. скачивает DOCX/XML;
 # 4. сохраняет files_index.xlsx.
-#
-# Сигналы здесь НЕ считаются.
 # ============================================================
 
 
@@ -273,9 +271,7 @@ def build_local_file_name(row: dict) -> str:
 
 
 def main() -> None:
-    print("=" * 70)
     print("M5 — Росказна: скачивание документов по депозитам ЕКС")
-    print("=" * 70)
 
     session = make_session()
     all_rows = []

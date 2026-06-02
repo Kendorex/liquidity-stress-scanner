@@ -12,11 +12,6 @@ DOWNLOAD_URL = "https://cbr.ru/vfs/hd_base/RReserves/required_reserves_table.xls
 
 
 def create_session() -> requests.Session:
-    """
-    Создаём сессию requests с повторными попытками.
-    Отключаем системные proxy-настройки, чтобы снизить риск ошибки WinError 10054.
-    """
-
     session = requests.Session()
     session.trust_env = False
 
@@ -38,11 +33,6 @@ def create_session() -> requests.Session:
 
 
 def download_required_reserves_excel() -> Path:
-    """
-    Скачивает Excel-файл с обязательными резервами кредитных организаций
-    с сайта Банка России и сохраняет его в папку data/cbr/m1/required_reserves.
-    """
-
     save_dir = Path("data") / "m1" / "required_reserves"
     save_dir.mkdir(parents=True, exist_ok=True)
 

@@ -45,44 +45,26 @@ OUTPUT_DIR = Path("data/lsi/results")
 OUTPUT_FILE = OUTPUT_DIR / "lsi_ml_signals.xlsx"
 ML_CHART_FILE = OUTPUT_DIR / "lsi_ml_chart.png"
 ML_CONTRIBUTIONS_CHART_FILE = OUTPUT_DIR / "lsi_ml_contributions_chart.png"
-
-# Отложенная выборка: всё, начиная с этой даты, не используется при обучении.
-# Это нужно, чтобы не обучать модель на тех же данных, на которых проверяем.
 HOLDOUT_START = "2024-01-01"
-
-# Порог вероятности стресса для статусов.
-# ML_LSI = probability * 100.
 GREEN_THRESHOLD = 40
 RED_THRESHOLD = 70
-
-# Основные признаки. Скрипт сам оставит только те, которые реально есть в Excel.
 FEATURE_COLUMNS = [
-    # нормализованные scores модулей
     "m1_score",
     "m2_score",
     "m3_score",
     "m5_score",
-    # M4 календарный контекст
     "tax_pressure_score",
     "seasonal_factor",
     "tax_week_flag",
-    # флаги модулей
     "m1_flag",
     "m2_flag",
     "m3_flag",
     "m5_flag",
-    # уже рассчитанный экспертный LSI как агрегированный признак
     "lsi",
 ]
 
 TARGET_COLUMN = "ground_truth_stress_flag"
 DATE_COLUMN = "date"
-
-
-# ------------------------------------------------------------
-# Вспомогательные функции
-# ------------------------------------------------------------
-
 
 def status_from_ml_lsi(value: float) -> str:
     if value < GREEN_THRESHOLD:
@@ -133,15 +115,9 @@ def prepare_ml_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
     data[TARGET_COLUMN] = pd.to_numeric(data[TARGET_COLUMN], errors="coerce")
-
-    # Для признаков пропуски заменяем нулём: нет сигнала = нет давления.
     data[existing_features] = data[existing_features].fillna(0.0)
-
-    # Для таргета пропуски удаляем: модель нельзя учить без ground truth.
     data = data.dropna(subset=[TARGET_COLUMN]).copy()
     data[TARGET_COLUMN] = data[TARGET_COLUMN].astype(int)
-
-    # На всякий случай убираем строки, где target не 0/1.
     data = data[data[TARGET_COLUMN].isin([0, 1])].copy()
 
     if data.empty:
@@ -261,9 +237,6 @@ def build_coefficients_table(model: Pipeline, feature_cols: list[str]) -> pd.Dat
     logit = model.named_steps["logit"]
 
     coef_scaled = logit.coef_[0]
-
-    # Коэффициенты в исходной шкале признаков.
-    # Это удобно для интерпретации: вклад = coef_original * feature_value.
     coef_original = coef_scaled / scaler.scale_
     intercept_original = logit.intercept_[0] - np.sum(coef_scaled * scaler.mean_ / scaler.scale_)
 
@@ -299,14 +272,6 @@ def add_feature_contributions(
     model: Pipeline,
     feature_cols: list[str],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Для LogisticRegression естественный вклад считается в log-odds:
-    logit(p) = intercept + beta_1*x_1 + ... + beta_n*x_n.
-
-    Для дашборда дополнительно переводим положительные вклады в шкалу ML_LSI:
-    contribution_feature_i суммируются примерно до ML_LSI.
-    Это не SHAP, но интерпретируемая декомпозиция линейной модели.
-    """
     out = result.copy()
 
     scaler = model.named_steps["scaler"]
@@ -329,9 +294,6 @@ def add_feature_contributions(
 
     out["ml_intercept_contribution"] = logit.intercept_[0]
     out["ml_logit_raw"] = out["ml_intercept_contribution"] + out[contrib_cols].sum(axis=1)
-
-    # Положительные вклады распределяем в пункты ML_LSI.
-    # Если все вклады <= 0, показываем нулевой вклад признаков.
     positive = out[contrib_cols].clip(lower=0.0)
     positive_sum = positive.sum(axis=1).replace(0, np.nan)
 
@@ -397,11 +359,6 @@ def build_backtest(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_sensitivity(model: Pipeline, df: pd.DataFrame, feature_cols: list[str]) -> pd.DataFrame:
-    """
-    Sensitivity для ML делаем не по весам, а по ключевым признакам:
-    смотрим, как меняется средний ML_LSI при шоке признака ±20%.
-    Это близко к требованию ТЗ про устойчивость к весам, но адаптировано для ML.
-    """
     rows = []
     base_prob = model.predict_proba(df[feature_cols])[:, 1]
     base_mean = float(np.mean(base_prob) * 100.0)
@@ -563,8 +520,6 @@ def main() -> None:
     print(f"Test: {len(test)} строк, стресс-дней: {int(test[TARGET_COLUMN].sum())}")
 
     model = train_model(train, feature_cols)
-
-    # Предсказания считаем по всей исходной таблице LSI, чтобы получить ежедневный ML_LSI.
     result = raw.copy()
     for col in feature_cols:
         result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)

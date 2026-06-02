@@ -12,14 +12,6 @@ from bs4 import BeautifulSoup
 #
 # Источник: ЦБ РФ
 # Таблица: "Дефицит/профицит ликвидности банковского сектора"
-#
-# Этот скрипт только скачивает HTML-страницу ЦБ,
-# достает из нее всю таблицу и полностью сохраняет в Excel/CSV.
-#
-# На выходе:
-# data/m5/cbr_bliquidity/cbr_bliquidity_01-02-2014_02-03-2026.xlsx
-# data/m5/cbr_bliquidity/cbr_bliquidity_01-02-2014_02-03-2026.csv
-# data/m5/cbr_bliquidity/cbr_bliquidity_01-02-2014_02-03-2026.html
 # ============================================================
 
 
@@ -37,10 +29,6 @@ DATE_TO_FILE = DATE_TO.replace(".", "-")
 RAW_HTML_FILE = OUTPUT_DIR / f"cbr_bliquidity_{DATE_FROM_FILE}_{DATE_TO_FILE}.html"
 OUTPUT_XLSX_FILE = OUTPUT_DIR / f"cbr_bliquidity_{DATE_FROM_FILE}_{DATE_TO_FILE}.xlsx"
 OUTPUT_CSV_FILE = OUTPUT_DIR / f"cbr_bliquidity_{DATE_FROM_FILE}_{DATE_TO_FILE}.csv"
-
-
-# В таблице ЦБ 15 числовых колонок.
-# Они соответствуют строке с номерами 1–15 в самой HTML-таблице.
 COLUMNS = [
     "date",
     "liquidity_deficit_surplus",
@@ -89,7 +77,6 @@ def download_html(url: str) -> str:
 
 
 def clean_number(value):
-    """Чистим числа: пробелы, неразрывные пробелы, запятые."""
     if value is None:
         return None
 
@@ -114,13 +101,6 @@ def clean_number(value):
 
 
 def parse_html_table(html: str) -> pd.DataFrame:
-    """
-    Достаем из HTML полную таблицу ЦБ.
-
-    В HTML есть сложная многострочная шапка.
-    Для расчетов удобнее использовать технические английские имена колонок,
-    но сами данные таблицы сохраняются полностью по всем 15 колонкам.
-    """
     soup = BeautifulSoup(html, "html.parser")
 
     table = soup.select_one("table.data")
@@ -132,13 +112,9 @@ def parse_html_table(html: str) -> pd.DataFrame:
 
     for tr in table.find_all("tr"):
         cells = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
-
-        # Строки с данными имеют 15 ячеек:
-        # дата + 14 показателей.
         if len(cells) != 15:
             continue
 
-        # Первая ячейка должна быть датой.
         if not re.match(r"^\d{2}\.\d{2}\.\d{4}$", cells[0]):
             continue
 
@@ -167,11 +143,6 @@ def parse_html_table(html: str) -> pd.DataFrame:
 
 
 def save_to_excel(df: pd.DataFrame) -> None:
-    """
-    Сохраняем в Excel.
-    Первый лист — данные.
-    Второй лист — расшифровка колонок.
-    """
     description = pd.DataFrame(
         [
             ["date", "Дата"],
@@ -207,9 +178,8 @@ def save_to_excel(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    print("=" * 70)
+    print()
     print("M5 — ЦБ: дефицит/профицит ликвидности банковского сектора")
-    print("=" * 70)
 
     url = build_url()
     html = download_html(url)

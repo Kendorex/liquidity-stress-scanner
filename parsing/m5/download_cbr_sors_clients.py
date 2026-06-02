@@ -20,19 +20,6 @@ from bs4 import BeautifulSoup
 #
 # Файл на сайте ЦБ:
 # 02_29_Budget_all.xlsx
-#
-# Почему именно он:
-# в нём находятся бюджетные средства на счетах кредитных организаций,
-# из которых дальше в M5 берутся:
-# - средства федерального бюджета;
-# - средства государственных внебюджетных фондов;
-# - общий показатель бюджетных средств.
-#
-# На выходе:
-# data/m5/cbr_sors/cbr_sors_page.html
-# data/m5/cbr_sors/02_29_Budget_all.xlsx
-# data/m5/cbr_sors/cbr_sors_files_index.xlsx
-# data/m5/cbr_sors/cbr_sors_files_index.csv
 # ============================================================
 
 
@@ -100,12 +87,9 @@ def is_target_budget_link(href: str, title: str, text: str) -> bool:
 
     if not href_low.endswith(".xlsx"):
         return False
-
-    # Главный и самый надежный признак.
     if file_name == TARGET_FILE_NAME.lower():
         return True
 
-    # Запасной вариант, если ЦБ изменит имя, но оставит описание.
     combined = clean_text(f"{title} {text}")
 
     has_budget_title = (
@@ -162,9 +146,6 @@ def extract_target_link_from_html(html: str) -> pd.DataFrame:
         return df
 
     df = df.drop_duplicates(subset=["url"]).copy()
-
-    # Если вдруг найдено несколько похожих файлов,
-    # приоритет отдаём точному имени 02_29_Budget_all.xlsx.
     df["priority"] = df["file_name"].str.lower().eq(TARGET_FILE_NAME.lower()).map(
         {True: 1, False: 2}
     )
@@ -176,11 +157,6 @@ def extract_target_link_from_html(html: str) -> pd.DataFrame:
 
 
 def build_fallback_index() -> pd.DataFrame:
-    """
-    Прямая ссылка нужна как резерв.
-    На странице ЦБ ссылка иногда может не находиться HTML-парсером,
-    но сам файл обычно доступен напрямую.
-    """
     return pd.DataFrame(
         [
             {
@@ -200,10 +176,6 @@ def build_fallback_index() -> pd.DataFrame:
 
 
 def validate_xlsx_bytes(content: bytes, url: str) -> None:
-    """
-    XLSX — это zip-файл.
-    Если вместо Excel пришла HTML-страница, первые байты будут не PK.
-    """
     if not content:
         raise RuntimeError(f"Пустой ответ при скачивании: {url}")
 
@@ -234,9 +206,7 @@ def download_file(session: requests.Session, url: str, file_path: Path) -> None:
 
 
 def main() -> None:
-    print("=" * 70)
     print("M5 — ЦБ SORS: скачивание бюджетных средств")
-    print("=" * 70)
 
     session = make_session()
 
@@ -267,9 +237,6 @@ def main() -> None:
 
     for _, row in index_df.iterrows():
         file_name = row["file_name"]
-
-        # Даже если ЦБ отдаст другое имя, сохраняем стабильно.
-        # Так основной M5-скрипт всегда сможет найти нужный файл.
         if str(file_name).lower() != TARGET_FILE_NAME.lower():
             file_name = TARGET_FILE_NAME
 

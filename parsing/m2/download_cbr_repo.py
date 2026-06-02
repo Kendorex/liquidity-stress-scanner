@@ -12,11 +12,7 @@ from urllib3.util.retry import Retry
 
 
 PAGE_URL = "https://cbr.ru/hd_base/repo/"
-
-# По ТЗ нужна история с 2010 года.
 DEFAULT_FROM_DATE = "01.01.2010"
-
-# Сильно не повышай. 5-6 потоков нормально, 20+ уже грубо для сайта ЦБ.
 MAX_WORKERS = 6
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,11 +22,6 @@ _THREAD_LOCAL = threading.local()
 
 
 def create_session() -> requests.Session:
-    """
-    Создаём сессию requests с повторными попытками.
-    trust_env=False нужен, чтобы Windows/VPN/proxy не ломали соединение с сайтом ЦБ.
-    """
-
     session = requests.Session()
     session.trust_env = False
 
@@ -51,11 +42,6 @@ def create_session() -> requests.Session:
 
 
 def get_thread_session() -> requests.Session:
-    """
-    Для каждого потока создаём свою сессию.
-    Так быстрее, чем каждый раз создавать новое подключение.
-    """
-
     if not hasattr(_THREAD_LOCAL, "session"):
         _THREAD_LOCAL.session = create_session()
 
@@ -63,8 +49,6 @@ def get_thread_session() -> requests.Session:
 
 
 def clean_text(text: str) -> str:
-    """Убирает лишние пробелы и неразрывные пробелы."""
-
     if text is None:
         return ""
 
@@ -73,12 +57,6 @@ def clean_text(text: str) -> str:
 
 
 def parse_number(value):
-    """
-    Переводит русские числа в float.
-    Например: '5 994 956,8' -> 5994956.8.
-    Если это не число, возвращает текст.
-    """
-
     text = clean_text(value)
 
     if text in ["", "—", "-"]:
@@ -115,13 +93,6 @@ def get_headers() -> dict:
 
 
 def extract_repo_tables_from_day(html: str, requested_date: str) -> list[dict]:
-    """
-    Достаёт подробные таблицы РЕПО за один день.
-
-    Важно: если качать сразу большой диапазон с сайта ЦБ,
-    иногда приходит укороченная таблица. Поэтому даты проверяются отдельно.
-    """
-
     soup = BeautifulSoup(html, "html.parser")
     rows = []
 
@@ -163,8 +134,6 @@ def extract_repo_tables_from_day(html: str, requested_date: str) -> list[dict]:
 
 
 def normalize_repo_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Приводит колонки ЦБ к короткому техническому виду."""
-
     rename_map = {
         "Тип аукциона": "auction_type",
         "Срок, дни": "term_days",
@@ -229,15 +198,6 @@ def normalize_repo_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def download_one_day_repo(date_str: str, term_filter: int = 0) -> list[dict]:
-    """
-    Скачивает подробные итоги РЕПО за один день.
-
-    term_filter:
-    0 — все сроки;
-    1 — до 5 дней;
-    5 — больше 5 дней.
-    """
-
     session = get_thread_session()
 
     params = {
@@ -254,13 +214,6 @@ def download_one_day_repo(date_str: str, term_filter: int = 0) -> list[dict]:
 
 
 def build_working_dates(start_date: datetime, end_date: datetime) -> list[str]:
-    """
-    Формирует список дат для проверки.
-
-    Субботы и воскресенья пропускаются, потому что аукционы РЕПО
-    в эти дни обычно не проводятся. История при этом всё равно идёт с 2010 года.
-    """
-
     dates = []
     current_date = start_date
 
@@ -274,8 +227,6 @@ def build_working_dates(start_date: datetime, end_date: datetime) -> list[str]:
 
 
 def load_date(date_str: str, term_filter: int) -> tuple[str, list[dict], str | None]:
-    """Обёртка для параллельной загрузки одной даты."""
-
     try:
         rows = download_one_day_repo(date_str=date_str, term_filter=term_filter)
         return date_str, rows, None
@@ -289,8 +240,6 @@ def download_repo_excel(
     term_filter: int = 0,
     max_workers: int = MAX_WORKERS,
 ) -> Path:
-    """Скачивает историю итогов аукционов РЕПО и сохраняет её в data/m2/repo."""
-
     if to_date is None:
         to_date = datetime.today().strftime("%d.%m.%Y")
 
@@ -354,13 +303,9 @@ def download_repo_excel(
     print(f"Файл сохранён: {save_path}")
 
     if errors:
-        print("-" * 80)
         print("Первые ошибки для проверки:")
         for date_str, error in errors[:10]:
             print(f"{date_str}: {error}")
-
-    print("=" * 80)
-
     return save_path
 
 

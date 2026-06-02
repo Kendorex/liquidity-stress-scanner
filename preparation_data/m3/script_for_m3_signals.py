@@ -25,19 +25,13 @@ RESULT_DIR = Path("data/m3/result")
 OUTPUT_FILE = RESULT_DIR / "ofz_auctions_m3_signals.xlsx"
 DAILY_OUTPUT_FILE = RESULT_DIR / "m3_cover_ratio_daily.xlsx"
 PLOT_FILE = RESULT_DIR / "m3_cover_ratio.png"
-
-# Примерно 3 года наблюдений.
-# У ОФЗ может быть несколько выпусков в один день, поэтому берем окно по строкам.
 MAD_WINDOW = 156
 MIN_PERIODS = 20
-
-# Для текущего проекта считаем и рисуем только доступный период 2016–2026.
 START_YEAR = 2016
 END_YEAR = 2026
 
 
 def normalize_column_name(column) -> str:
-    """Приводим название колонки к удобному виду."""
     column = str(column).strip().lower()
     column = column.replace("\n", " ")
     column = re.sub(r"\s+", " ", column)
@@ -45,7 +39,6 @@ def normalize_column_name(column) -> str:
 
 
 def clean_number(value):
-    """Чистим числа из Excel: пробелы, запятые, лишний текст."""
     if pd.isna(value):
         return None
 
@@ -57,8 +50,6 @@ def clean_number(value):
     value = value.replace("\xa0", "")
     value = value.replace(" ", "")
     value = value.replace(",", ".")
-
-    # Оставляем только цифры, точку и минус.
     value = re.sub(r"[^0-9.\-]", "", value)
 
     if value in ("", "-", ".", "-."):
@@ -71,10 +62,6 @@ def clean_number(value):
 
 
 def find_header_row(raw_df: pd.DataFrame) -> int | None:
-    """
-    Ищем строку, где находятся заголовки таблицы.
-    В файлах Минфина заголовок может быть не в первой строке.
-    """
     max_rows = min(30, len(raw_df))
 
     for i in range(max_rows):
@@ -91,7 +78,6 @@ def find_header_row(raw_df: pd.DataFrame) -> int | None:
 
 
 def find_column(columns: list[str], keywords: list[str]) -> str | None:
-    """Ищем колонку по ключевым словам."""
     for column in columns:
         for keyword in keywords:
             if keyword in column:
@@ -100,7 +86,6 @@ def find_column(columns: list[str], keywords: list[str]) -> str | None:
 
 
 def prepare_one_file(file_path: Path) -> pd.DataFrame:
-    """Читает один Excel-файл Минфина и приводит его к единому формату."""
     print(f"Обрабатываю файл: {file_path.name}")
 
     source_year_match = re.search(r"(20\d{2})", file_path.name)
@@ -173,8 +158,6 @@ def prepare_one_file(file_path: Path) -> pd.DataFrame:
 
     df["source_year"] = source_year
     df["source_file"] = file_path.name
-
-    # Убираем служебные строки, итоги и пустые строки.
     df = df.dropna(subset=["auction_date"])
     df = df[df["ofz_issue"].notna()]
     df = df[~df["ofz_issue"].astype(str).str.lower().str.contains("итого|всего|total", na=False)]
@@ -183,12 +166,6 @@ def prepare_one_file(file_path: Path) -> pd.DataFrame:
 
 
 def calculate_mad_score(series: pd.Series, window: int = MAD_WINDOW) -> pd.Series:
-    """
-    MAD-score = (x - rolling_median) / (1.4826 * rolling_MAD)
-
-    1.4826 нужен, чтобы MAD был сопоставим со стандартным отклонением
-    при нормальном распределении.
-    """
     series = pd.to_numeric(series, errors="coerce")
 
     rolling_median = series.rolling(window=window, min_periods=MIN_PERIODS).median()
@@ -227,8 +204,6 @@ def build_m3_signals() -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True)
 
     df["auction_date"] = pd.to_datetime(df["auction_date"], errors="coerce")
-
-    # Считаем только период 2016–2026.
     df = df[
         (df["auction_date"].dt.year >= START_YEAR)
         & (df["auction_date"].dt.year <= END_YEAR)
@@ -248,8 +223,6 @@ def build_m3_signals() -> pd.DataFrame:
 
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # Главный показатель M3: спрос / предложение.
     df["cover_ratio"] = df["demand_volume"] / df["offer_volume"]
 
     df.loc[
@@ -258,31 +231,10 @@ def build_m3_signals() -> pd.DataFrame:
     ] = pd.NA
 
     df["cover_ratio"] = pd.to_numeric(df["cover_ratio"], errors="coerce")
-
-    # Флаги по ТЗ.
     df["flag_nedospros"] = (df["cover_ratio"] < 1.2).astype(int)
     df["flag_perespros"] = (df["cover_ratio"] > 2.0).astype(int)
-
-    # Для стресса важен именно низкий cover_ratio.
-    # Поэтому знак разворачиваем: чем ниже cover_ratio относительно нормы,
-    # тем выше стрессовый score.
     df["mad_score_cover_raw"] = calculate_mad_score(df["cover_ratio"])
     df["mad_score_cover"] = -df["mad_score_cover_raw"]
-
-    # ------------------------------------------------------------
-    # MVP-версия yield_spread
-    #
-    # В полном варианте по ТЗ yield_spread должен считаться как отклонение
-    # доходности размещения от кривой ОФЗ / ближайших выпусков.
-    #
-    # Пока отдельной кривой ОФЗ нет, поэтому используем proxy:
-    # yield_spread = текущая средневзвешенная доходность
-    #                − скользящая медианная доходность аукционов.
-    #
-    # Это не полноценная рыночная кривая ОФЗ, но для MVP дает рабочий
-    # индикатор отклонения доходности от собственной исторической нормы.
-    # ------------------------------------------------------------
-
     df["weighted_avg_yield"] = pd.to_numeric(df["weighted_avg_yield"], errors="coerce")
 
     df["rolling_median_yield"] = (
@@ -291,17 +243,10 @@ def build_m3_signals() -> pd.DataFrame:
         .median()
     )
 
-    # Важно: это proxy, а не полноценный спред к рыночной кривой ОФЗ.
     df["proxy_yield_spread"] = df["weighted_avg_yield"] - df["rolling_median_yield"]
     df["proxy_yield_spread"] = pd.to_numeric(df["proxy_yield_spread"], errors="coerce")
-
-    # Оставляем старое имя для обратной совместимости с уже написанным LSI/графиками.
     df["yield_spread"] = df["proxy_yield_spread"]
-
     df["mad_score_yield_spread"] = calculate_mad_score(df["proxy_yield_spread"])
-
-    # Итоговый стандартизированный выход M3 для LSI.
-    # mad_score_cover уже развернут: положительное значение = стресс из-за низкого спроса.
     cover_stress_score = pd.to_numeric(df["mad_score_cover"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
     yield_stress_score = pd.to_numeric(df["mad_score_yield_spread"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
 
@@ -349,7 +294,6 @@ def build_m3_signals() -> pd.DataFrame:
 
 
 def build_daily_cover_ratio(df: pd.DataFrame) -> pd.DataFrame:
-    """Собираем дневную таблицу для графика."""
     daily = (
         df.groupby("auction_date", as_index=False)
         .agg(
@@ -376,7 +320,6 @@ def build_daily_cover_ratio(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_cover_ratio(daily: pd.DataFrame) -> None:
-    """Строим аккуратный график Cover ratio ОФЗ."""
     plot_df = daily.dropna(subset=["auction_date", "cover_ratio"]).copy()
 
     if plot_df.empty:
@@ -384,28 +327,20 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
         return
 
     plot_df = plot_df.sort_values("auction_date").reset_index(drop=True)
-
-    # Сглаживание, чтобы график не выглядел как шум.
-    # Берём короткое окно, потому что аукционы проходят не каждый день.
     plot_df["cover_ratio_smooth"] = (
         plot_df["cover_ratio"]
         .rolling(window=5, min_periods=1)
         .mean()
     )
 
-    # Ограничиваем верхний масштаб, чтобы редкие выбросы не портили картинку.
     upper_limit = plot_df["cover_ratio"].quantile(0.95)
     upper_limit = max(upper_limit, 2.5)
-
     plot_df["cover_ratio_for_plot"] = plot_df["cover_ratio"].clip(upper=upper_limit)
     plot_df["cover_ratio_smooth_for_plot"] = plot_df["cover_ratio_smooth"].clip(upper=upper_limit)
-
     nedospros = plot_df[plot_df["flag_nedospros"] == 1]
     perespros = plot_df[plot_df["flag_perespros"] == 1]
 
     plt.figure(figsize=(16, 7))
-
-    # Зоны для визуальной интерпретации.
     plt.axhspan(
         0,
         1.2,
@@ -420,7 +355,6 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
         label="Зона переспроса",
     )
 
-    # Основная дневная линия — тонкая.
     plt.plot(
         plot_df["auction_date"],
         plot_df["cover_ratio_for_plot"],
@@ -429,7 +363,6 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
         label="Дневной cover ratio",
     )
 
-    # Сглаженная линия — главная.
     plt.plot(
         plot_df["auction_date"],
         plot_df["cover_ratio_smooth_for_plot"],
@@ -437,7 +370,6 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
         label="Сглаженный cover ratio",
     )
 
-    # Пороговые уровни.
     plt.axhline(
         1.2,
         linestyle="--",
@@ -452,7 +384,6 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
         label="Порог переспроса: 2.0",
     )
 
-    # Точки сигналов.
     plt.scatter(
         nedospros["auction_date"],
         nedospros["cover_ratio_for_plot"],
@@ -490,10 +421,8 @@ def plot_cover_ratio(daily: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    print("=" * 70)
     print("M3 — Размещение ОФЗ")
     print("Готовлю сигналы по результатам аукционов Минфина")
-    print("=" * 70)
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 

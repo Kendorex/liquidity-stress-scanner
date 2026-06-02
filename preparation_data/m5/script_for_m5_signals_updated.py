@@ -28,28 +28,17 @@ CBR_SORS_DIR = Path("data/m5/cbr_sors")
 ROSKAZNA_DIR = Path("data/m5/roskazna_deposits")
 ROSKAZNA_INDEX_FILE = ROSKAZNA_DIR / "files_index.xlsx"
 ROSKAZNA_PARSED_FILE = ROSKAZNA_DIR / "roskazna_deposits_parsed.xlsx"
-
 CBR_BLIQUIDITY_DIR = Path("data/m5/cbr_bliquidity")
-
 RESULT_DIR = Path("data/m5/result")
 OUTPUT_FILE = RESULT_DIR / "m5_treasury_signals.xlsx"
 PLOT_FILE = RESULT_DIR / "m5_treasury_flow.png"
-
 DEBUG_CBR_SORS_FILE = RESULT_DIR / "debug_cbr_sors_matches.xlsx"
 DEBUG_ROSKAZNA_FILE = RESULT_DIR / "debug_roskazna_parsed.xlsx"
-
 MAD_WINDOW_MONTHLY = 36
 MIN_PERIODS_MONTHLY = 12
-
 MAD_WINDOW_WEEKLY = 156
 MIN_PERIODS_WEEKLY = 20
-
 BUDGET_DRAIN_THRESHOLD = -300.0
-
-
-# ============================================================
-# 0. Общие функции
-# ============================================================
 
 
 def clean_text(value) -> str:
@@ -94,16 +83,10 @@ def normalize_to_bln(series: pd.Series) -> pd.Series:
 
     if pd.isna(median_value) or median_value == 0:
         return series
-
-    # рубли
     if median_value > 10_000_000:
         return series / 1_000_000_000
-
-    # млн руб.
     if median_value > 10_000:
         return series / 1_000
-
-    # уже млрд руб.
     return series
 
 
@@ -112,12 +95,8 @@ def normalize_amount_to_bln(value):
 
     if value is None:
         return None
-
-    # рубли
     if value > 10_000_000:
         value = value / 1_000_000_000
-
-    # млн руб.
     elif value > 10_000:
         value = value / 1_000
 
@@ -165,13 +144,6 @@ def calculate_mad_score(series: pd.Series, window: int, min_periods: int) -> pd.
 
 
 def sum_with_na(series: pd.Series):
-    """
-    Важно:
-    NA = данных нет.
-    0 = данные есть, но размещение было нулевым / отбор не состоялся.
-
-    Поэтому нельзя обычный sum() с последующей заменой 0 на NA.
-    """
     series = pd.to_numeric(series, errors="coerce")
 
     if series.notna().sum() == 0:
@@ -187,13 +159,7 @@ def ensure_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================
-# 1. ЦБ SORS
-# ============================================================
-
 CBR_BUDGET_FILE = CBR_SORS_DIR / "02_29_Budget_all.xlsx"
-
 PREFERRED_CBR_SHEET_NAMES = [
     "итого",
     "Итого",
@@ -215,14 +181,12 @@ EXTRA_BUDGET_KEYWORDS = [
 
 
 def parse_cbr_date_cell(value):
-    """Пытаемся распознать дату из ячейки Excel."""
     if value is None or pd.isna(value):
         return pd.NaT
-
+    
     if isinstance(value, pd.Timestamp):
         return value.normalize()
 
-    # openpyxl/pandas иногда возвращает datetime.date или datetime.datetime
     if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
         try:
             return pd.Timestamp(value).normalize()
@@ -234,7 +198,6 @@ def parse_cbr_date_cell(value):
     if not text:
         return pd.NaT
 
-    # 01.02.2019 / 01-02-2019
     match = re.search(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})", text)
     if match:
         try:
@@ -246,7 +209,6 @@ def parse_cbr_date_cell(value):
         except ValueError:
             return pd.NaT
 
-    # 20190201
     match = re.search(r"(20\d{2})(\d{2})(\d{2})", text)
     if match:
         try:
@@ -267,7 +229,6 @@ def parse_cbr_date_cell(value):
 
 
 def find_date_header_row(raw: pd.DataFrame) -> tuple[int | None, dict[int, pd.Timestamp]]:
-    """Ищем строку, где больше всего дат. В 02_29 даты идут по колонкам."""
     best_row = None
     best_dates = {}
 
@@ -280,7 +241,6 @@ def find_date_header_row(raw: pd.DataFrame) -> tuple[int | None, dict[int, pd.Ti
             if pd.isna(date_value):
                 continue
 
-            # Для M5 нужны месячные даты, а не служебные годы из заголовков.
             if 1990 <= date_value.year <= 2035:
                 dates[col_idx] = date_value
 
@@ -295,7 +255,6 @@ def find_date_header_row(raw: pd.DataFrame) -> tuple[int | None, dict[int, pd.Ti
 
 
 def row_label_before_dates(row_values: list, first_date_col: int) -> str:
-    """Собираем текстовую часть строки до начала блока с датами."""
     text_values = []
 
     for value in row_values[:first_date_col]:
@@ -334,7 +293,6 @@ def extract_time_series_from_row(
 
 
 def choose_cbr_sheet(excel: pd.ExcelFile) -> str:
-    """Сначала пробуем лист 'итого', затем любой лист с похожим названием."""
     sheet_names_clean = {clean_text(name): name for name in excel.sheet_names}
 
     for preferred in PREFERRED_CBR_SHEET_NAMES:
@@ -346,23 +304,10 @@ def choose_cbr_sheet(excel: pd.ExcelFile) -> str:
     for sheet_name in excel.sheet_names:
         if "итог" in clean_text(sheet_name) or "всего" in clean_text(sheet_name):
             return sheet_name
-
-    # Если название листов неожиданное, берём последний лист:
-    # в файле ЦБ обычно порядок: рубли, инвалюта, итого.
     return excel.sheet_names[-1]
 
 
 def parse_cbr_budget_all_file(file_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Парсим 02_29_Budget_all.xlsx.
-
-    В этом файле ЦБ значения указаны в млн руб.
-    Для M5 используем лист 'итого' и строки:
-    - средства федерального бюджета;
-    - средства внебюджетных фондов.
-
-    На выходе переводим значения в млрд руб.
-    """
     debug_rows = []
 
     if not file_path.exists():
@@ -471,7 +416,6 @@ def parse_cbr_budget_all_file(file_path: Path) -> tuple[pd.DataFrame, pd.DataFra
         + result["cbr_extra_budgetary_funds"].fillna(0)
     )
 
-    # Если обе компоненты пустые, итог тоже должен быть NA, а не 0.
     both_missing = (
         result["cbr_federal_budget_funds"].isna()
         & result["cbr_extra_budgetary_funds"].isna()
@@ -480,11 +424,8 @@ def parse_cbr_budget_all_file(file_path: Path) -> tuple[pd.DataFrame, pd.DataFra
 
     result["source_file"] = file_path.name
     result["source_sheet"] = sheet_name
-
     result = result.dropna(subset=["date"]).copy()
     result = result.sort_values("date").reset_index(drop=True)
-
-    # Оставляем только строки, где есть хотя бы одно значение.
     result = result[
         result[["cbr_federal_budget_funds", "cbr_extra_budgetary_funds"]]
         .notna()
@@ -504,13 +445,6 @@ def parse_cbr_budget_all_file(file_path: Path) -> tuple[pd.DataFrame, pd.DataFra
 
 
 def load_cbr_sors_budget_funds() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Загружаем бюджетные средства ЦБ именно из 02_29_Budget_all.xlsx.
-
-    Старый подход, где скрипт перебирал все Excel в папке cbr_sors,
-    больше не используется: файлы 02_19 / 02_24 не являются нужным
-    источником для M5 и засоряют диагностику.
-    """
     if not CBR_BUDGET_FILE.exists():
         print(f"Не найден основной файл ЦБ SORS: {CBR_BUDGET_FILE}")
         print("Сначала запусти: python parsing/m5/download_cbr_sors.py")
@@ -546,11 +480,6 @@ def build_cbr_monthly(cbr_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return cbr_monthly
-
-# ============================================================
-# 2. Росказна
-# ============================================================
-
 
 def normalize_path_for_current_os(value: str | Path) -> Path:
     """
@@ -662,21 +591,6 @@ def get_xml_child_text(node: ET.Element, tag_name: str):
 
 
 def parse_roskazna_xml_structured(file_path: Path, fallback_date=None) -> list[dict]:
-    """
-    Парсим XML Росказны по реальным тегам.
-
-    В XML денежные значения идут в млн руб.:
-    maxvol      — объявленный лимит;
-    totalbid    — спрос банков;
-    totalaccept — принятый объём;
-    totalsettle — фактическое размещение.
-
-    Для M5 используем placed_volume_bln:
-    1. totalsettle, если есть;
-    2. totalaccept, если totalsettle нет;
-    3. 0, если отбор несостоявшийся;
-    4. maxvol как proxy для свежих объявленных отборов.
-    """
     if not file_path.exists():
         return []
 
@@ -761,9 +675,6 @@ def parse_roskazna_xml_structured(file_path: Path, fallback_date=None) -> list[d
 
 
 def extract_amount_candidates_from_text(text: str) -> list[dict]:
-    """
-    Fallback для DOCX/текста, если XML-структура изменилась.
-    """
     if not text:
         return []
 
@@ -876,7 +787,6 @@ def parse_roskazna_file(row: pd.Series) -> list[dict]:
 
             return result_rows
 
-    # Fallback для DOCX или нестандартного XML.
     if file_type == "docx":
         text = read_docx_text(file_path)
     elif file_type == "xml":
@@ -1110,12 +1020,6 @@ def build_roskazna_weekly(df: pd.DataFrame) -> pd.DataFrame:
 
     return weekly
 
-
-# ============================================================
-# 3. Ground truth ЦБ
-# ============================================================
-
-
 def load_cbr_bliquidity_ground_truth() -> pd.DataFrame:
     files = sorted(CBR_BLIQUIDITY_DIR.glob("*.xlsx"))
 
@@ -1172,12 +1076,6 @@ def load_cbr_bliquidity_ground_truth() -> pd.DataFrame:
     )
 
     return monthly
-
-
-# ============================================================
-# 4. Итоговые сигналы M5
-# ============================================================
-
 
 def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     cbr_df, cbr_debug = load_cbr_sors_budget_funds()
@@ -1239,34 +1137,20 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
 
     for col in base_columns:
         result[col] = pd.to_numeric(result[col], errors="coerce")
-
-    # ----------------------------
-    # Месячные изменения
-    # ----------------------------
-
     result["cbr_delta_month"] = result["cbr_budget_funds_total"].diff()
     result["roskazna_deposit_volume_delta_month"] = result["roskazna_deposit_volume"].diff()
-
-    # ЦБ: падение бюджетных остатков в банках = стресс, поэтому знак разворачиваем.
     result["mad_score_cbr_raw"] = calculate_mad_score(
         result["cbr_delta_month"],
         window=MAD_WINDOW_MONTHLY,
         min_periods=MIN_PERIODS_MONTHLY,
     )
     result["mad_score_cbr"] = -result["mad_score_cbr_raw"]
-
-    # Росказна: падение размещений ЕКС на депозитах = меньше притока в банки = стресс.
     result["mad_score_roskazna_monthly_raw"] = calculate_mad_score(
         result["roskazna_deposit_volume_delta_month"],
         window=MAD_WINDOW_MONTHLY,
         min_periods=MIN_PERIODS_MONTHLY,
     )
     result["mad_score_roskazna_monthly"] = -result["mad_score_roskazna_monthly_raw"]
-
-    # ----------------------------
-    # Недельные изменения Росказны
-    # ----------------------------
-
     if not roskazna_weekly.empty:
         roskazna_weekly["roskazna_deposit_volume_delta_week"] = (
             roskazna_weekly["roskazna_deposit_volume_weekly"].diff()
@@ -1297,20 +1181,9 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
     else:
         result["mad_score_roskazna_weekly_max"] = pd.NA
         result["roskazna_deposit_volume_delta_week_min"] = pd.NA
-
-    # ----------------------------
-    # Финальный MAD-score Росказны
-    # ----------------------------
-    # Для LSI оставляем название mad_score_roskazna.
-    # Это уже не только месячный сигнал, а максимум между месячным и недельным стрессом.
     result["mad_score_roskazna"] = result[
         ["mad_score_roskazna_monthly", "mad_score_roskazna_weekly_max"]
     ].max(axis=1)
-
-    # ----------------------------
-    # Флаг бюджетного оттока
-    # ----------------------------
-
     result["flag_budget_drain"] = (
         (result["cbr_delta_month"] <= BUDGET_DRAIN_THRESHOLD)
         | (result["roskazna_deposit_volume_delta_month"] <= BUDGET_DRAIN_THRESHOLD)
@@ -1319,9 +1192,6 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
         | (result["mad_score_roskazna"] >= 2.5)
     ).astype(int)
 
-    # Итоговый стандартизированный выход M5 для LSI.
-    # ЦБ — главный источник. Росказна используется только как дополнительный индикатор,
-    # потому что её история в текущем наборе данных заполнена неравномерно.
     cbr_score = pd.to_numeric(result["mad_score_cbr"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
     roskazna_score = pd.to_numeric(result["mad_score_roskazna"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=4.0) / 4.0 * 100.0
     flag_score = result["flag_budget_drain"].astype(float) * 100.0
@@ -1375,11 +1245,6 @@ def build_m5_signals() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Dat
     result = result[final_columns]
 
     return result, roskazna_raw, roskazna_weekly, cbr_debug
-
-
-# ============================================================
-# 5. График
-# ============================================================
 
 
 def plot_m5_treasury_flow(result: pd.DataFrame) -> None:
@@ -1456,12 +1321,6 @@ def plot_m5_treasury_flow(result: pd.DataFrame) -> None:
     plt.savefig(PLOT_FILE, dpi=220)
     plt.close()
 
-
-# ============================================================
-# 6. Сохранение
-# ============================================================
-
-
 def save_outputs(
     result: pd.DataFrame,
     roskazna_raw: pd.DataFrame,
@@ -1513,11 +1372,6 @@ def save_outputs(
 
     if not roskazna_raw.empty:
         roskazna_raw.to_excel(DEBUG_ROSKAZNA_FILE, index=False)
-
-
-# ============================================================
-# 7. Запуск
-# ============================================================
 
 
 def main() -> None:

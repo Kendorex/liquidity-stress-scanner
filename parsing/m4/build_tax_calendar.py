@@ -14,8 +14,6 @@ START_DATE = "2010-01-01"
 
 
 def next_business_day(date_value: pd.Timestamp) -> pd.Timestamp:
-    """Переносит дату на ближайший следующий рабочий день, если она попала на выходной."""
-
     date_value = pd.Timestamp(date_value).normalize()
 
     while date_value.weekday() >= 5:
@@ -25,23 +23,10 @@ def next_business_day(date_value: pd.Timestamp) -> pd.Timestamp:
 
 
 def month_last_day(year: int, month: int) -> pd.Timestamp:
-    """Возвращает последний календарный день месяца."""
-
     return pd.Timestamp(year=year, month=month, day=calendar.monthrange(year, month)[1])
 
 
 def build_tax_events(start_date: str, end_date: str) -> pd.DataFrame:
-    """
-    Формирует календарь ключевых налоговых дат.
-
-    M4 не парсит рыночные данные, а строит календарный фактор.
-    Главные даты:
-    - 25 число: уведомления / отчетность;
-    - 28 число: основной день уплаты ЕНП и налоговых платежей;
-    - 5 число следующего месяца: дополнительный НДФЛ за период 23-е — конец месяца;
-    - конец месяца и квартала: сезонное давление на ликвидность.
-    """
-
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
 
@@ -78,10 +63,7 @@ def build_tax_events(start_date: str, end_date: str) -> pd.DataFrame:
                     "event_weight": 45 if not quarter_payment_flag else 55,
                 }
             )
-
-            # Дополнительный НДФЛ за период с 23-го по конец месяца.
             if month == 12:
-                # В декабре дополнительный срок НДФЛ попадает на конец года.
                 ndfl_date = next_business_day(last_day)
             else:
                 next_month = month + 1
@@ -126,8 +108,6 @@ def build_tax_events(start_date: str, end_date: str) -> pd.DataFrame:
 
 
 def build_daily_calendar(start_date: str = START_DATE, end_date: str | None = None) -> pd.DataFrame:
-    """Создаёт ежедневный календарь налогового давления."""
-
     if end_date is None:
         end_date = datetime.today().strftime("%Y-%m-%d")
 
@@ -164,8 +144,6 @@ def build_daily_calendar(start_date: str = START_DATE, end_date: str | None = No
     calendar_df["ndfl_second_payment_flag"] = calendar_df["tax_event_type"].str.contains("ndfl_second_payment", na=False).astype(int)
     calendar_df["end_of_month_flag"] = calendar_df["tax_event_type"].str.contains("end_of_month", na=False).astype(int)
     calendar_df["end_of_quarter_flag"] = calendar_df["tax_event_type"].str.contains("end_of_quarter", na=False).astype(int)
-
-    # Окна вокруг основных платежных дат: за 3 дня до события и 1 день после.
     payment_dates = events.loc[events["event_type"].isin(["main_tax_payment", "ndfl_second_payment"]), "event_date"].drop_duplicates()
     notification_dates = events.loc[events["event_type"].eq("tax_notification"), "event_date"].drop_duplicates()
 
@@ -191,8 +169,6 @@ def build_daily_calendar(start_date: str = START_DATE, end_date: str | None = No
 
     calendar_df["tax_payment_window_flag"] = calendar_df["days_to_nearest_tax_payment"].between(-1, 3).astype(int)
     calendar_df["tax_notification_window_flag"] = calendar_df["days_to_nearest_tax_notification"].between(-1, 2).astype(int)
-
-    # Отдельный флаг налоговой недели — более широкий календарный контекст.
     calendar_df["tax_week_flag"] = calendar_df["days_to_nearest_tax_payment"].between(-2, 5).astype(int)
 
     output_columns = [
@@ -223,9 +199,6 @@ def build_daily_calendar(start_date: str = START_DATE, end_date: str | None = No
 def main() -> None:
     end_date = datetime.today().strftime("%Y-%m-%d")
 
-    print("=" * 80)
-    print("Создаю календарь налоговых дат для M4")
-    print("=" * 80)
     print(f"Период: {START_DATE} — {end_date}")
 
     calendar_df = build_daily_calendar(start_date=START_DATE, end_date=end_date)
@@ -237,7 +210,6 @@ def main() -> None:
 
     print(f"Строк в календаре: {len(calendar_df)}")
     print(f"Файл сохранён: {save_path}")
-    print("=" * 80)
 
 
 if __name__ == "__main__":

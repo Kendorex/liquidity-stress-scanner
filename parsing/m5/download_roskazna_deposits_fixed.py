@@ -19,8 +19,6 @@ from bs4 import BeautifulSoup
 # 3. скачивает файлы;
 # 4. сохраняет files_index.xlsx / files_index.csv;
 # 5. сразу парсит XML и сохраняет roskazna_deposits_parsed.xlsx.
-#
-# Важное:
 # - maxvol      — предельный объём отбора, млн руб.;
 # - totalbid    — спрос банков, млн руб.;
 # - totalaccept — принятый объём, млн руб.;
@@ -251,14 +249,12 @@ def build_local_file_name(row: dict) -> str:
     else:
         date_part = "unknown_date"
 
-    # На сайте иногда title неполный, поэтому добавляем имя из URL.
     url_name = Path(str(row.get("file_url", ""))).name
     visible_name = row.get("file_name") or url_name
     return f"{date_part}_{safe_filename(visible_name)}"
 
 
 def normalize_path_for_current_os(value: str | Path) -> Path:
-    """Исправляет Windows-пути из Excel: data\m5\... -> data/m5/..."""
     text = str(value).strip().strip('"').strip("'")
     text = text.replace("\\", "/")
     return Path(text)
@@ -302,11 +298,6 @@ def get_xml_child_text(node: ET.Element, tag_name: str):
 
 
 def parse_roskazna_xml_file(file_path: Path, fallback_date=None) -> list[dict]:
-    """Парсит официальный XML Росказны по тегам Depoauc*.
-
-    Возвращает одну или несколько строк, если в файле несколько отборов.
-    Денежные поля в XML Росказны указаны в млн руб., поэтому переводим в млрд руб.
-    """
     if not file_path.exists():
         return []
 
@@ -358,7 +349,6 @@ def parse_roskazna_xml_file(file_path: Path, fallback_date=None) -> list[dict]:
             placed_bln = 0.0
             volume_source = "failed_auction_zero"
         else:
-            # Fallback нужен только как proxy, если сайт поменяет XML-структуру.
             placed_bln = maxvol_bln
             volume_source = "maxvol_proxy"
 
@@ -417,8 +407,6 @@ def parse_downloaded_xml_files(index_df: pd.DataFrame) -> pd.DataFrame:
 
     parsed_df["date"] = pd.to_datetime(parsed_df["date"], errors="coerce")
     parsed_df = parsed_df.dropna(subset=["date"]).copy()
-
-    # На всякий случай убираем дубли одного и того же аукциона.
     parsed_df = parsed_df.sort_values(["date", "auction_id", "source_file_path"])
     parsed_df = parsed_df.drop_duplicates(subset=["date", "auction_id", "term_days", "placed_volume_bln"], keep="last")
 
@@ -426,10 +414,7 @@ def parse_downloaded_xml_files(index_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    print("=" * 70)
     print("M5 — Росказна: скачивание и парсинг депозитов ЕКС")
-    print("=" * 70)
-
     session = make_session()
     all_rows = []
 

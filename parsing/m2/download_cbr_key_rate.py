@@ -8,8 +8,6 @@ from urllib3.util.retry import Retry
 
 
 PAGE_URL = "https://cbr.ru/hd_base/KeyRate/"
-
-# Ключевая ставка на сайте ЦБ доступна с 17.09.2013.
 DEFAULT_FROM_DATE = "17.09.2013"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,8 +15,6 @@ SAVE_DIR = PROJECT_ROOT / "data" / "m2" / "key_rate"
 
 
 def create_session() -> requests.Session:
-    """Создаём сессию с повторными попытками."""
-
     session = requests.Session()
     session.trust_env = False
 
@@ -42,8 +38,6 @@ def download_key_rate_excel(
     from_date: str = DEFAULT_FROM_DATE,
     to_date: str | None = None,
 ) -> Path:
-    """Скачивает историю ключевой ставки Банка России в data/m2/key_rate."""
-
     if to_date is None:
         to_date = datetime.today().strftime("%d.%m.%Y")
 

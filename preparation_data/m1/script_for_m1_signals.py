@@ -4,24 +4,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
-# Корень проекта PRACTIC
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-# Входные папки с сырыми Excel-файлами
 REQUIRED_RESERVES_DIR = PROJECT_ROOT / "data" / "m1" / "required_reserves"
 RUONIA_DIR = PROJECT_ROOT / "data" / "m1" / "ruonia"
-
-# Итоговая папка M1
 RESULTS_DIR = PROJECT_ROOT / "data" / "m1" / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def find_latest_xlsx(folder: Path) -> Path:
-    """
-    Находит последний Excel-файл в папке.
-    """
-
     files = list(folder.glob("*.xlsx"))
 
     if not files:
@@ -31,21 +21,6 @@ def find_latest_xlsx(folder: Path) -> Path:
 
 
 def clean_required_reserves() -> pd.DataFrame:
-    """
-    Очищает файл обязательных резервов ЦБ.
-
-    На выходе:
-    - period_start
-    - period_end
-    - actual_corr_accounts
-    - required_reserves_avg
-    - required_reserves_accounts
-    - averaging_period_days
-    - report_period
-    - regulation_period
-    - spread
-    """
-
     print("=" * 80)
     print("Очищаю обязательные резервы")
     print("=" * 80)
@@ -106,22 +81,18 @@ def clean_required_reserves() -> pd.DataFrame:
 
     df = df.dropna(subset=["period_start"])
     df = df.sort_values("period_start").reset_index(drop=True)
-
-    # Конец периода: сначала считаем через длительность периода.
     df["period_end"] = (
         df["period_start"]
         + pd.to_timedelta(df["averaging_period_days"] - 1, unit="D")
     )
 
-    # Если длительность периода отсутствует, берём день перед следующим периодом.
     df["period_end"] = df["period_end"].fillna(
         df["period_start"].shift(-1) - pd.Timedelta(days=1)
     )
 
-    # Если это последняя строка и нет данных для расчёта конца периода.
     df["period_end"] = df["period_end"].fillna(df["period_start"])
 
-    # Главный показатель M1
+
     df["spread"] = df["actual_corr_accounts"] - df["required_reserves_avg"]
 
     output_columns = [

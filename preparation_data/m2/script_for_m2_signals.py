@@ -15,25 +15,13 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 MAIN_TERM_DAYS = 7
-
-# Историческое окно для нормализации: примерно 3 года.
 WINDOW_DAYS = 1095
-
-# Минимум прошлых наблюдений, чтобы считать MAD-сигнал осмысленным.
 MIN_PERIODS = 20
-
-# Нижние пороги MAD нужны, чтобы спокойная история с почти нулевой
-# волатильностью не превращала любое небольшое отклонение в сигнал 100.
 COVER_MAD_FLOOR = 0.10
 SPREAD_MAD_FLOOR = 0.10
 
 
 def find_latest_xlsx(folder: Path) -> Path:
-    """
-    Находит последний нормальный Excel-файл в папке.
-    Временные файлы Excel вида ~$file.xlsx игнорируются.
-    """
-
     files = [
         file for file in folder.glob("*.xlsx")
         if not file.name.startswith("~$")
@@ -46,15 +34,6 @@ def find_latest_xlsx(folder: Path) -> Path:
 
 
 def parse_auction_date_from_datetime(value) -> pd.Timestamp:
-    """
-    Достаёт реальную дату аукциона из строки вида:
-    '26.05.2026 на 13:30'.
-
-    Это важно, потому что сайт ЦБ иногда на запрос следующего дня
-    возвращает последнюю доступную таблицу. Тогда дата запроса может
-    отличаться от настоящей даты аукциона.
-    """
-
     if pd.isna(value):
         return pd.NaT
 
@@ -68,10 +47,7 @@ def parse_auction_date_from_datetime(value) -> pd.Timestamp:
 
 
 def to_number(series: pd.Series) -> pd.Series:
-    """
-    Надёжно переводит числа из Excel в float.
-    Поддерживает и обычный float, и русскую запись через запятую.
-    """
+
 
     return pd.to_numeric(
         series.astype(str)
@@ -92,12 +68,6 @@ def calculate_past_mad_score(
     min_periods: int = MIN_PERIODS,
     mad_floor: float = 0.0,
 ) -> pd.DataFrame:
-    """
-    Считает median, MAD и MAD-score только по прошлой истории.
-
-    Это важнее обычного rolling(), потому что для раннего сигнала нельзя
-    использовать текущую точку в собственной базе сравнения.
-    """
 
     result = df.copy()
 
@@ -156,11 +126,7 @@ def calculate_past_mad_score(
 
 
 def clean_repo() -> pd.DataFrame:
-    """Читает и очищает сырые итоги аукционов РЕПО."""
-
-    print("=" * 80)
     print("Очищаю итоги аукционов РЕПО")
-    print("=" * 80)
 
     file_path = find_latest_xlsx(REPO_DIR)
     print(f"Файл: {file_path}")
@@ -280,11 +246,7 @@ def clean_repo() -> pd.DataFrame:
 
 
 def clean_key_rate() -> pd.DataFrame:
-    """Читает и очищает ключевую ставку."""
-
-    print("=" * 80)
     print("Очищаю ключевую ставку")
-    print("=" * 80)
 
     file_path = find_latest_xlsx(KEY_RATE_DIR)
     print(f"Файл: {file_path}")
@@ -309,14 +271,6 @@ def clean_key_rate() -> pd.DataFrame:
 
 
 def add_key_rate(repo_df: pd.DataFrame, key_rate_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Подтягивает ключевую ставку к дате аукциона.
-
-    РЕПО не протягивается по календарю.
-    Протягивается только ключевая ставка, потому что она действует
-    до следующего изменения.
-    """
-
     repo_df = repo_df.sort_values("auction_date").copy()
     key_rate_df = key_rate_df.sort_values("date").copy()
 
@@ -340,16 +294,6 @@ def add_key_rate(repo_df: pd.DataFrame, key_rate_df: pd.DataFrame) -> pd.DataFra
 
 
 def cover_ratio_level_score(cover_ratio: pd.Series) -> pd.Series:
-    """
-    Базовая шкала от уровня переспроса.
-
-    Это главный компонент M2:
-    - около 1.0 — нормальная ситуация;
-    - 1.2–2.0 — нарастает напряжение;
-    - выше 2.0 — явный переспрос;
-    - выше 3.0 — очень сильный переспрос.
-    """
-
     score = pd.Series(0.0, index=cover_ratio.index)
 
     low_mask = (cover_ratio > 1.0) & (cover_ratio <= 1.2)
@@ -380,11 +324,7 @@ def cover_ratio_level_score(cover_ratio: pd.Series) -> pd.Series:
 
 
 def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
-    """Считает итоговые сигналы M2."""
-
-    print("=" * 80)
     print("Считаю сигналы M2")
-    print("=" * 80)
 
     df = m2_df.copy()
     df = df.sort_values(["auction_date", "auction_datetime"]).reset_index(drop=True)
@@ -445,15 +385,6 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         & df["mad_score_cover_ratio"].notna()
         & df["mad_score_cutoff_spread"].notna()
     ).astype(int)
-
-    # ------------------------------------------------------------------
-    # Итоговый M2 signal
-    # ------------------------------------------------------------------
-    # Основной фактор — уровень переспроса cover_ratio.
-    # MAD по cover_ratio и спред ставки к ключевой используются как усилители,
-    # но не ломают шкалу и не превращают нормальный спрос в стресс.
-    # ------------------------------------------------------------------
-
     df["demand_level_score"] = cover_ratio_level_score(df["cover_ratio"])
 
     df["demand_mad_bonus"] = (
@@ -471,12 +402,7 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         + df["demand_mad_bonus"]
         + df["rate_pressure_bonus"]
     ).clip(lower=0, upper=100)
-
-    # Если сигнала по полной методике ещё нельзя считать, ставим 0.
     df.loc[df["signal_ready"] == 0, "m2_signal"] = 0
-
-    # Смысловые ограничения:
-    # ставка не может одна сделать стресс, если спрос почти равен размещению.
     almost_normal_demand = (
         (df["signal_ready"] == 1)
         & (df["cover_ratio"] <= 1.2)
@@ -485,8 +411,6 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         df.loc[almost_normal_demand, "m2_signal"].clip(upper=35)
     )
 
-    # До cover_ratio <= 2 это ещё не полноценный переспрос.
-    # Может быть напряжение, но не стресс.
     moderate_demand = (
         (df["signal_ready"] == 1)
         & (df["cover_ratio"] > 1.2)
@@ -496,7 +420,6 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         df.loc[moderate_demand, "m2_signal"].clip(upper=70)
     )
 
-    # Полноценный стрессовый паттерн — переспрос плюс давление по ставке.
     stress_pattern = (
         (df["signal_ready"] == 1)
         & (df["cover_ratio"] > 2.0)
@@ -506,7 +429,6 @@ def calculate_m2_signals(m2_df: pd.DataFrame) -> pd.DataFrame:
         df.loc[stress_pattern, "m2_signal"] + 5
     ).clip(upper=100)
 
-    # Единый стандарт выхода для LSI.
     df["date"] = df["auction_date"]
     df["m2_score"] = df["m2_signal"]
     df["m2_flag"] = ((df["flag_demand"] == 1) | (df["flag_rate_pressure"] == 1)).astype(int)
@@ -571,8 +493,6 @@ def save_results(
     key_rate_clean: pd.DataFrame,
     m2_signals: pd.DataFrame,
 ) -> None:
-    """Сохраняет итоговые таблицы M2."""
-
     signals_path = RESULTS_DIR / "m2_signals.xlsx"
     full_result_path = RESULTS_DIR / "m2_full_result.xlsx"
 
@@ -583,16 +503,12 @@ def save_results(
         key_rate_clean.to_excel(writer, sheet_name="key_rate_clean", index=False)
         m2_signals.to_excel(writer, sheet_name="m2_signals", index=False)
 
-    print("=" * 80)
     print("Файлы сохранены")
-    print("=" * 80)
     print(f"Итоговые сигналы M2: {signals_path}")
     print(f"Общий Excel-файл M2: {full_result_path}")
 
 
 def save_chart(m2_signals: pd.DataFrame) -> None:
-    """Сохраняет итоговые графики M2."""
-
     chart_df = m2_signals[
         (m2_signals["signal_scope"] == "main_7d_repo")
         & (m2_signals["auction_date"].notna())
@@ -602,11 +518,6 @@ def save_chart(m2_signals: pd.DataFrame) -> None:
 
     cover_chart_path = RESULTS_DIR / "m2_cover_ratio_chart.png"
     signal_chart_path = RESULTS_DIR / "m2_signal_chart.png"
-
-    # ------------------------------------------------------------------
-    # График 1. Cover ratio
-    # ------------------------------------------------------------------
-
     normal_points = chart_df[
         (chart_df["cover_ratio"].notna())
         & (chart_df["cover_ratio"] <= 2.0)
@@ -660,10 +571,6 @@ def save_chart(m2_signals: pd.DataFrame) -> None:
 
     plt.savefig(cover_chart_path, dpi=220, bbox_inches="tight")
     plt.close()
-
-    # ------------------------------------------------------------------
-    # График 2. Итоговый сигнал M2
-    # ------------------------------------------------------------------
 
     signal_df = chart_df[
         chart_df["signal_ready"] == 1
@@ -744,9 +651,7 @@ def save_chart(m2_signals: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    print("=" * 80)
     print("Запускаю финальный расчет модуля M2")
-    print("=" * 80)
     print(f"Корень проекта: {PROJECT_ROOT}")
     print(f"Папка результатов: {RESULTS_DIR}")
 
@@ -768,9 +673,7 @@ def main() -> None:
 
     save_chart(m2_signals)
 
-    print("=" * 80)
     print("Модуль M2 завершён")
-    print("=" * 80)
     print(f"Строк в итоговой таблице: {len(m2_signals)}")
     print(f"Файлы лежат в: {RESULTS_DIR}")
 

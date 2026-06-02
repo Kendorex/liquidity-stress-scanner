@@ -17,17 +17,7 @@ import matplotlib.pyplot as plt
 # 3) нормализует сигналы в sub-index 0–100;
 # 4) считает единый LSI 0–100;
 # 5) показывает вклад каждого модуля.
-#
-# Важно:
-# - M4 не является отдельным стресс-модулем, а работает как сезонный множитель.
-# - Вклады contribution_m1...contribution_m5 после clipping нормируются так,
-#   чтобы их сумма была равна итоговому LSI.
 # ============================================================
-
-
-# ------------------------------------------------------------
-# Пути
-# ------------------------------------------------------------
 
 M1_FILE_CANDIDATES = [
     Path("data/m1/results/m1_signals.xlsx"),
@@ -61,11 +51,6 @@ OUTPUT_FILE = RESULT_DIR / "lsi_signals.xlsx"
 LSI_CHART_FILE = RESULT_DIR / "lsi_chart.png"
 CONTRIBUTIONS_CHART_FILE = RESULT_DIR / "lsi_contributions_chart.png"
 
-
-# ------------------------------------------------------------
-# Методология
-# ------------------------------------------------------------
-
 BASE_WEIGHTS = {
     "m1": 0.25,
     "m2": 0.25,
@@ -79,13 +64,7 @@ AGGREGATION_SCALE = 1.8
 MAD_CAP = 4.0
 M3_CARRY_DAYS = 7
 
-# Обрезаем будущие / неполные будущие даты.
 CUT_FUTURE_DATES = True
-
-
-# ------------------------------------------------------------
-# Вспомогательные функции
-# ------------------------------------------------------------
 
 def find_existing_path(candidates: list[Path], module_name: str) -> Path | None:
     for path in candidates:
@@ -226,11 +205,6 @@ def build_daily_timeline(frames: list[pd.DataFrame]) -> pd.DataFrame:
 def safe_bool_flag(series) -> pd.Series:
     return (pd.to_numeric(series, errors="coerce").fillna(0.0) > 0).astype(int)
 
-
-# ------------------------------------------------------------
-# Загрузка M1–M5
-# ------------------------------------------------------------
-
 def prepare_m1() -> pd.DataFrame:
     path = find_existing_path(M1_FILE_CANDIDATES, "M1")
     df = read_excel_try_sheets(path, "M1")
@@ -333,8 +307,6 @@ def prepare_m3() -> pd.DataFrame:
     if "m3_score" in df.columns:
         df["m3_score"] = clip_0_100(df["m3_score"])
     else:
-        # В актуальном M3 mad_score_cover уже развернут: положительное значение = стресс.
-        # Старую ошибку с negative_mad_to_score здесь не используем.
         low_cover_score = positive_mad_to_score(df["mad_score_cover"] if "mad_score_cover" in df.columns else None)
         yield_score = positive_mad_to_score(df["mad_score_yield_spread"] if "mad_score_yield_spread" in df.columns else None)
         if "flag_nedospros" in df.columns:
@@ -454,16 +426,10 @@ def prepare_ground_truth() -> pd.DataFrame:
     if valid.empty:
         df["ground_truth_stress_flag"] = 0
     else:
-        # Для проверки: стресс = нижний квартиль исторических значений или баланс < 0.
         threshold = min(0.0, valid.quantile(0.25))
         df["ground_truth_stress_flag"] = (df["ground_truth_liquidity_balance"] <= threshold).astype(int)
 
     return df[["date", "ground_truth_liquidity_balance", "ground_truth_stress_flag"]].dropna(subset=["date"])
-
-
-# ------------------------------------------------------------
-# Объединение
-# ------------------------------------------------------------
 
 def merge_modules() -> pd.DataFrame:
     m1 = prepare_m1()
@@ -477,8 +443,6 @@ def merge_modules() -> pd.DataFrame:
     print("Готовлю единую дневную шкалу...")
     timeline = build_daily_timeline([m1, m2, m3, m4, m5, gt])
     result = timeline.copy()
-
-    # M1 и M5 — низкая частота. Берём последнее известное значение.
     for frame in [m1, m5, gt]:
         if not frame.empty:
             result = pd.merge_asof(
@@ -487,12 +451,9 @@ def merge_modules() -> pd.DataFrame:
                 on="date",
                 direction="backward",
             )
-
-    # M2 — в дни без аукциона давление = 0.
     if not m2.empty:
         result = result.merge(m2, on="date", how="left")
 
-    # M3 — держим сигнал M3 несколько дней после аукциона.
     if not m3.empty:
         m3_daily = timeline.merge(m3, on="date", how="left")
         for col in ["m3_score", "m3_flag", "m3_ready"]:
@@ -513,7 +474,6 @@ def merge_modules() -> pd.DataFrame:
             how="left",
         )
 
-    # M4 — календарь строго по дате.
     if not m4.empty:
         result = result.merge(m4, on="date", how="left")
 
@@ -544,11 +504,6 @@ def merge_modules() -> pd.DataFrame:
 
     return result
 
-
-# ------------------------------------------------------------
-# LSI
-# ------------------------------------------------------------
-
 def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> pd.DataFrame:
     weights = normalize_weights(weights or BASE_WEIGHTS)
     result = df.copy()
@@ -556,7 +511,6 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     for module, weight in weights.items():
         result[f"weight_{module}"] = weight
 
-    # В налоговые недели уменьшаем M1/M2/M5, чтобы не было двойного счёта календарного фактора.
     tax_mask = result["tax_week_flag"].astype(int) == 1
     for module in ["m1", "m2", "m5"]:
         if f"weight_{module}" in result.columns:
@@ -570,7 +524,6 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     for module in weights:
         result[f"weight_{module}"] = result[f"weight_{module}"] / weight_sum
 
-    # Базовые вклады до сезонного множителя.
     for module in weights:
         result[f"base_contribution_{module}"] = (
             result[f"{module}_score"] * result[f"weight_{module}"] * AGGREGATION_SCALE
@@ -589,12 +542,10 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     result["raw_lsi_before_clip"] = result["base_lsi_before_seasonal"] * result["seasonal_multiplier"]
     result["lsi"] = result["raw_lsi_before_clip"].clip(0.0, 100.0)
 
-    # Вклад M4 — только дополнительное усиление от сезонного множителя.
     result["base_contribution_m4"] = (
         result["base_lsi_before_seasonal"] * (result["seasonal_multiplier"] - 1.0)
     ).clip(lower=0.0)
 
-    # До clipping сумма этих вкладов = raw_lsi_before_clip.
     preclip_cols = []
     for module in weights:
         result[f"preclip_contribution_{module}"] = result[f"base_contribution_{module}"]
@@ -606,13 +557,11 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
     preclip_sum = result[preclip_cols].sum(axis=1).replace(0, np.nan)
     clip_factor = (result["lsi"] / preclip_sum).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    # Финальные вклады. Их сумма равна LSI.
     for module in weights:
         result[f"contribution_{module}"] = result[f"preclip_contribution_{module}"] * clip_factor
 
     result["contribution_m4"] = result["preclip_contribution_m4"] * clip_factor
 
-    # Контрольная колонка для проверки интерпретируемости.
     contribution_cols = [
         "contribution_m1",
         "contribution_m2",
@@ -636,7 +585,6 @@ def calculate_lsi(df: pd.DataFrame, weights: dict[str, float] | None = None) -> 
 
 
 def is_known_stress_event(date_value) -> int:
-    """Ручной event-flag для проверки на известных стрессовых окнах."""
     date = pd.to_datetime(date_value, errors="coerce")
     if pd.isna(date):
         return 0
@@ -681,11 +629,6 @@ def get_top_driver(row: pd.Series) -> str:
     }
 
     return max(values, key=values.get)
-
-
-# ------------------------------------------------------------
-# Backtest / sensitivity / quality
-# ------------------------------------------------------------
 
 def build_backtest(lsi_df: pd.DataFrame) -> pd.DataFrame:
     episodes = [
@@ -814,11 +757,6 @@ def build_quality_report(lsi_df: pd.DataFrame) -> pd.DataFrame:
 
     return pd.DataFrame(rows)
 
-
-# ------------------------------------------------------------
-# Графики и сохранение
-# ------------------------------------------------------------
-
 def plot_lsi(lsi_df: pd.DataFrame) -> None:
     plot_df = lsi_df.dropna(subset=["date"]).copy()
 
@@ -852,7 +790,6 @@ def plot_lsi(lsi_df: pd.DataFrame) -> None:
 
 
 def plot_contributions(lsi_df: pd.DataFrame) -> None:
-    # Рисуем только последние 365 дней, чтобы график быстро строился.
     plot_df = lsi_df.dropna(subset=["date"]).tail(365).copy()
 
     if plot_df.empty:

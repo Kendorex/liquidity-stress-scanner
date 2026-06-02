@@ -11,8 +11,6 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def find_latest_xlsx(folder: Path) -> Path:
-    """Находит последний Excel-файл, игнорируя временные файлы Excel."""
-
     files = [file for file in folder.glob("*.xlsx") if not file.name.startswith("~$")]
 
     if not files:
@@ -22,11 +20,7 @@ def find_latest_xlsx(folder: Path) -> Path:
 
 
 def clean_tax_calendar() -> pd.DataFrame:
-    """Читает календарь налоговых дат и приводит типы колонок."""
-
-    print("=" * 80)
     print("Очищаю календарь налоговых дат")
-    print("=" * 80)
 
     file_path = find_latest_xlsx(CALENDAR_DIR)
     print(f"Файл: {file_path}")
@@ -76,27 +70,13 @@ def clean_tax_calendar() -> pd.DataFrame:
 
 
 def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Считает M4 как сезонный календарный фактор.
-
-    M4 не должен сам означать рыночный стресс. Это контекст:
-    в налоговые даты и около них спрос на ликвидность может быть сезонно выше.
-    """
-
-    print("=" * 80)
     print("Считаю сезонный фактор M4")
-    print("=" * 80)
 
     df = calendar_df.copy()
-
     df["tax_pressure_score"] = 0.0
-
-    # Основные события.
     df["tax_pressure_score"] += df["tax_payment_flag"] * 45
     df["tax_pressure_score"] += df["ndfl_second_payment_flag"] * 25
     df["tax_pressure_score"] += df["tax_notification_flag"] * 12
-
-    # Окна вокруг налоговых дат. Это мягкий фон, а не само событие.
     payment_window_bonus = np.where(
         df["tax_payment_window_flag"] == 1,
         18 - np.minimum(np.abs(df["days_to_nearest_tax_payment"].fillna(99)), 5) * 3,
@@ -111,10 +91,6 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
     df["tax_pressure_score"] += np.maximum(notification_window_bonus, 0)
-
-    # Налоговая неделя — слабый фоновый фактор.
-    # Он не должен сам создавать налоговое давление, но должен отличать
-    # такие дни от полностью обычных.
     tax_week_bonus = np.where(
         (df["tax_week_flag"] == 1)
         & (df["tax_payment_window_flag"] == 0)
@@ -123,18 +99,11 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
         0,
     )
     df["tax_pressure_score"] += tax_week_bonus
-
-    # Конец месяца и квартала усиливает календарное давление.
     df["tax_pressure_score"] += df["end_of_month_flag"] * 8
     df["tax_pressure_score"] += df["end_of_quarter_flag"] * 15
-
-    # Выходные не являются рыночным днем, но календарный фактор сохраняем.
     df["tax_pressure_score"] = df["tax_pressure_score"].clip(lower=0, upper=100)
-
     df["seasonal_factor"] = 1.0 + 0.25 * df["tax_pressure_score"] / 100
     df["seasonal_factor"] = df["seasonal_factor"].clip(lower=1.0, upper=1.25)
-
-    # Единый стандарт выхода для LSI: M4 — не отдельный стресс, а сезонный множитель.
     df["m4_seasonal_factor"] = df["seasonal_factor"]
     df["m4_score"] = df["tax_pressure_score"]
     df["m4_flag"] = df["tax_week_flag"].astype(int)
@@ -189,8 +158,6 @@ def calculate_m4_signals(calendar_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_results(calendar_clean: pd.DataFrame, m4_signals: pd.DataFrame) -> None:
-    """Сохраняет Excel-файлы M4."""
-
     signals_path = RESULTS_DIR / "m4_signals.xlsx"
     full_result_path = RESULTS_DIR / "m4_full_result.xlsx"
 
@@ -200,26 +167,18 @@ def save_results(calendar_clean: pd.DataFrame, m4_signals: pd.DataFrame) -> None
         calendar_clean.to_excel(writer, sheet_name="tax_calendar_clean", index=False)
         m4_signals.to_excel(writer, sheet_name="m4_signals", index=False)
 
-    print("=" * 80)
     print("Файлы сохранены")
-    print("=" * 80)
     print(f"Итоговые сигналы M4: {signals_path}")
     print(f"Общий Excel-файл M4: {full_result_path}")
 
 
 def save_chart(m4_signals: pd.DataFrame) -> None:
-    """Сохраняет два графика M4: полный и приближенный."""
-
     chart_df = m4_signals.copy()
     chart_df["date"] = pd.to_datetime(chart_df["date"], errors="coerce")
     chart_df = chart_df.dropna(subset=["date"]).sort_values("date")
 
     full_chart_path = RESULTS_DIR / "m4_seasonal_factor_chart_full.png"
     recent_chart_path = RESULTS_DIR / "m4_seasonal_factor_chart_recent.png"
-
-    # ==========================================================
-    # 1. Полный график за весь период
-    # ==========================================================
     fig, ax = plt.subplots(figsize=(16, 7))
 
     ax.plot(
@@ -254,10 +213,6 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
 
     plt.savefig(full_chart_path, dpi=220, bbox_inches="tight")
     plt.close()
-
-    # ==========================================================
-    # 2. Приближенный график за последние 4 года
-    # ==========================================================
     recent_start_date = chart_df["date"].max() - pd.DateOffset(years=4)
     recent_df = chart_df[chart_df["date"] >= recent_start_date].copy()
 
@@ -301,11 +256,7 @@ def save_chart(m4_signals: pd.DataFrame) -> None:
 
 
 def print_summary(m4_signals: pd.DataFrame) -> None:
-    """Печатает краткую сводку по M4."""
-
-    print("=" * 80)
     print("Сводка M4")
-    print("=" * 80)
     print(
         f"Период: {m4_signals['date'].min().date()} — {m4_signals['date'].max().date()}"
     )
